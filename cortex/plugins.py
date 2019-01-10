@@ -9,6 +9,7 @@ from torch.utils.data import Dataset
 from cortex._lib.config import CONFIG, _config_name
 from cortex._lib.data import DatasetPluginBase, register as register_data
 from cortex._lib.models import ModelPluginBase, register_model
+from cortex._lib.utils import (summarize_results, update_nested_dict)
 
 __author__ = 'R Devon Hjelm'
 __author_email__ = 'erroneus@gmail.com'
@@ -47,8 +48,8 @@ class DatasetPlugin(DatasetPluginBase):
 
         if local_path is None:
             raise KeyError(
-                '`{}` not found in {} data_paths'
-                .format(local_path, _config_name))
+                '`local` not found in {} data_paths'
+                .format(_config_name))
         to_path = path.join(local_path, basename)
         if (not path.exists(to_path)) and path.exists(from_path):
 
@@ -256,6 +257,30 @@ class ModelPlugin(ModelPluginBase):
         self.routine(auto_input=True)
         self.optimizer_step()
 
+    def autotune(self, **kwargs):
+        """Autotune keyword arguments per epoch.
+
+        It gives the opportunity to implement autotuning program logic
+        for the hyperparameters defined in the procedure.
+
+        It should consider results from the optional validation steps
+        performed in the beginning of `self.train_loop`
+        over a number of `validate_batches` given by the user.
+        These results can be found in `self.validation`.
+        The losses can be found in `self.validation_losses` respectively.
+
+        Ask for a specific tunable hyperparameter as a keyword argument in
+        the definition of `autotune`. Respect the naming of the
+        hyperparameter across other definitions. Write changes in
+        `self.tunables`.
+
+        .. info:: `self.tunables` are used to update hyperparameters
+           declared in `self.kwargs`. Modify the appropriate key name
+           to tune its value.
+
+        """
+        pass
+
     def eval_step(self):
         """Makes an evaluation step.
 
@@ -283,14 +308,35 @@ class ModelPlugin(ModelPluginBase):
             if optimizer is not None:
                 optimizer.step()
 
-    def train_loop(self):
+    def train_loop(self, validate_batches=0):
         """The training loop.
 
         This can be overridden to change the behavior of the training loop.
 
+        Args:
+            eval_batches: Number of batches to be used for model validation.
+
         """
 
         try:
+            while self.data.u < validate_batches:
+                self.eval_step()
+
+            if validate_batches > 0:
+                results = self._all_epoch_results
+                results['losses'] = dict(self._all_epoch_losses)
+                results['times'] = dict((k, sum(v))
+                                        for k, v in self._all_epoch_times.items())
+                validation = summarize_results(results)
+
+                self._all_validation._allow_overwrite = True
+                update_nested_dict(self._all_validation, **validation)
+                self._all_validation._allow_overwrite = False
+
+                self._reset_epoch()
+
+                self.autotune()
+
             while True:
                 self.train_step()
 

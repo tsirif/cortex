@@ -48,6 +48,23 @@ def update_dict_of_lists(d_to_update, **d):
             d_to_update[k] = [v]
 
 
+def update_nested_dict(d_to_update, **d):
+    """Updates a nested dictionary with kwargs.
+
+    Args:
+        d_to_update (dict): nested dictionary.
+        **d: keyword arguments to append.
+
+    """
+    for k, v in d.items():
+        if isinstance(v, dict):
+            if k not in d_to_update.keys():
+                d_to_update[k] = {}
+            update_nested_dict(d_to_update[k], **v)
+        else:
+            d_to_update[k] = v
+
+
 def bad_values(d):
     failed = {}
     for k, v in d.items():
@@ -103,3 +120,35 @@ def compute_tsne(X, perplexity=40, n_iter=300, init='pca'):
     tsne = TSNE(2, perplexity=perplexity, n_iter=n_iter, init=init)
     points = X.tolist()
     return tsne.fit_transform(points)
+
+
+def summarize_results(results):
+    results_ = {}
+    for k, v in results.items():
+        if isinstance(v, dict):
+            results_[k] = summarize_results(v)
+        else:
+            if len(v) > 0:
+                try:
+                    results_[k] = np.mean(v)
+                except BaseException:
+                    raise ValueError(
+                        'Something is wrong with result {} of type {}.'.format(
+                            k, type(v[0])))
+    return results_
+
+
+def summarize_results_std(results):
+    results_ = {}
+    for k, v in results.items():
+        if isinstance(v, dict):
+            results_[k] = summarize_results_std(v)
+        else:
+            if len(v) > 0:
+                try:
+                    results_[k] = np.std(v)
+                except BaseException:
+                    raise ValueError(
+                        'Something is wrong with result {} of type {}.'.format(
+                            k, type(v[0])))
+    return results_

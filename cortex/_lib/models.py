@@ -8,9 +8,10 @@ import time
 
 from . import data, exp, optimizer
 from .parsing import parse_docstring, parse_inputs, parse_kwargs
-from .handlers import (aliased, prefixed, NetworkHandler, LossHandler,
-                       ResultsHandler)
-from .utils import bad_values, update_dict_of_lists
+from .handlers import (aliased, prefixed,
+                       NetworkHandler, LossHandler,
+                       ResultsHandler, TunablesHandler)
+from .utils import (bad_values, update_dict_of_lists)
 from .viz import VizHandler
 
 
@@ -58,7 +59,8 @@ class PluginType(type):
         kwargs = {}
         args = set()
 
-        for key in ['build', 'routine', 'visualize', 'train_step', 'eval_step']:
+        for key in ['build', 'routine', 'visualize',
+                    'train_step', 'autotune', 'eval_step']:
             if hasattr(cls, key):
                 attr = getattr(cls, key)
                 help_ = parse_docstring(attr)
@@ -111,6 +113,8 @@ class ModelPluginBase(metaclass=PluginType):
     # TODO(Devon): This is done in conjunction with clearing all losses
     # after train_step.
     _all_results = ResultsHandler()
+    _all_validation = ResultsHandler(allow_overwrite=False)
+    _all_tunables = TunablesHandler()
 
     _all_epoch_results = ResultsHandler()
     _all_epoch_losses = ResultsHandler()
@@ -133,15 +137,19 @@ class ModelPluginBase(metaclass=PluginType):
             contract = self._check_contract(contract)
             self._accept_contract(contract)
 
+        self._all_tunables.share_global_kwargs(self._kwargs)
         if self._contract and len(self._contract['nets']) > 0:
             self._nets = aliased(self._all_nets, aliases=contract['nets'])
             self._losses = aliased(self._all_losses, aliases=contract['nets'])
             self._epoch_losses = aliased(
                 self._all_epoch_losses, aliases=contract['nets'])
+            self._tunables = aliased(self._all_tunables,
+                                     aliases=contract['kwargs'])
         else:
             self._nets = aliased(self._all_nets)
             self._losses = aliased(self._all_losses)
             self._epoch_losses = aliased(self._all_epoch_losses)
+            self._tunables = aliased(self._all_tunables)
 
         self.wrap_functions()
 
@@ -155,6 +163,7 @@ class ModelPluginBase(metaclass=PluginType):
         self._wrap_routine()
         self.visualize = self._wrap(self.visualize)
         self.train_step = self._wrap_step(self.train_step)
+        self.autotune = self._wrap(self.autotune)
         self.eval_step = self._wrap_step(self.eval_step, train=False)
         self.train_loop = self._wrap_loop(self.train_loop, train=True)
         self.eval_loop = self._wrap_loop(self.eval_loop, train=False)
@@ -238,6 +247,14 @@ class ModelPluginBase(metaclass=PluginType):
         return self._results
 
     @property
+    def validation(self):
+        return self._all_validation
+
+    @property
+    def tunables(self):
+        return self._tunables
+
+    @property
     def nets(self):
         return self._nets
 
@@ -275,21 +292,26 @@ class ModelPluginBase(metaclass=PluginType):
             kwargs = model.kwargs
             help = model.help
 
+            # Translate aggregated model's kwargs to self's
             if model._contract:
                 kwargs = dict((model._contract['kwargs'].get(k, k), v)
                               for k, v in kwargs.items() if v is not None)
                 help = dict((model._contract['kwargs'].get(k, k), v)
                             for k, v in help.items())
 
+            # Complete self's kwargs with aggregated model's
             for k, v in kwargs.items():
                 if k not in self.kwargs or self.kwargs[k] is None:
                     self.kwargs[k] = copy.deepcopy(v)
+            self._all_tunables.share_global_kwargs(self.kwargs)
             for k, v in help.items():
                 if k not in self.help:
                     self.help[k] = help[k]
-            model._set_kwargs(self._kwargs)
-            model.name = key
+            # Make total kwargs known to the tree of models with self as root
+            model._set_kwargs(self.kwargs)
 
+            # Overwrite model's name by its usage
+            model.name = key
             model._results = prefixed(
                 model._all_results, prefix=model.name)
             model._epoch_results = prefixed(
@@ -460,7 +482,8 @@ class ModelPluginBase(metaclass=PluginType):
                         optimizer.zero_grad()
 
                     for p in net.parameters():
-                        p.requires_grad = k in training_nets
+                        p.requires_grad_(True)
+
                     net.train()
 
             start = time.time()
@@ -533,15 +556,18 @@ class ModelPluginBase(metaclass=PluginType):
         else:
             epoch_str = 'Evaluating {} (epoch {}): '
 
-        def wrapped(epoch, data_mode=data_mode, use_pbar=True):
+        def wrapped(epoch, data_mode=data_mode, use_pbar=True, **kwargs):
             self._reset_epoch()
             self.data.reset(data_mode, string=epoch_str.format(exp.NAME, epoch),
                             make_pbar=use_pbar)
-            fn()
+            fn(**kwargs)
 
             results = self._all_epoch_results
             results['losses'] = dict(self._all_epoch_losses)
             results['times'] = dict(self._all_epoch_times)
+            if train:
+                results['validate'] = dict(self._all_validation)
+                results['tunables'] = dict(self._all_tunables)
 
         return wrapped
 

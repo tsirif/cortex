@@ -56,7 +56,6 @@ class Handler(MutableMapping):
 
         if not self._allow_overwrite and hasattr(self, key):
             raise KeyError('Overwriting keys not allowed.')
-
         super().__setattr__(key, value)
 
     def __iter__(self):
@@ -78,7 +77,7 @@ class Handler(MutableMapping):
         return d.__str__()
 
 
-def convert_nested_dict_to_handler(d, _class=Handler):
+def convert_nested_dict_to_handler(d, _class=Handler):  # XXX
     if not isinstance(d, dict):
         return d
     for k, v in d.items():
@@ -158,7 +157,8 @@ class PrefixedAliasedHandler(Handler):
 
     def __getattr__(self, item):
         if item.startswith('_'):
-            return super().__setattr__(item)
+            return super().__getattr__(item)
+
         item = self._prefix + '_' + item
         return self._handler.__getitem__(item)
 
@@ -172,6 +172,7 @@ class PrefixedAliasedHandler(Handler):
     def __getitem__(self, item):
         if item.startswith('_'):
             return super().__getitem__(item)
+
         item = self._prefix + '_' + item
         return self._handler.__getitem__(item)
 
@@ -307,4 +308,33 @@ class LossHandler(Handler):
             return super().__setattr__(key, value)
 
         self._check_keyvalue(key, value)
+        super().__setattr__(key, value)
+
+
+class TunablesHandler(Handler):
+    '''Simple dict-like container for tunable hyperparameters.'''
+
+    _type = None
+    _get_error_string = 'Keyword `{}` not declared. Please check against function signatures.'
+
+    def __init__(self, gkwargs=None, **kwargs):
+        self._global_kwargs = gkwargs or dict()
+        super().__init__(**kwargs)
+
+    def share_global_kwargs(self, gkwargs):
+        """Share global kwargs object to complete functions' kwargs."""
+        self._global_kwargs = gkwargs
+
+    def __setitem__(self, key, value):
+        if not key.startswith('_'):
+            if key not in self._global_kwargs:
+                raise KeyError(self._get_error_string.format(key))
+            self._global_kwargs[key] = value
+        super().__setitem__(key, value)
+
+    def __setattr__(self, key, value):
+        if not key.startswith('_'):
+            if key not in self._global_kwargs:
+                raise KeyError(self._get_error_string.format(key))
+            self._global_kwargs[key] = value
         super().__setattr__(key, value)

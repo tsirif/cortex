@@ -44,7 +44,7 @@ def init(viz_config):
         port = viz_config.get('port', 8097)
         visualizer = visdom.Visdom(server=server, port=port)
         if not visualizer.check_connection():
-            if _yes_no("No Visdom server runnning on the configured address. "
+            if _yes_no("No Visdom server running on the configured address. "
                        "Do you want to start it?"):
                 viz_bash_command = "python -m visdom.server"
                 viz_process = subprocess.Popen(viz_bash_command.split())
@@ -184,7 +184,7 @@ class VizHandler():
 
 
 def plot(epoch, init=False):
-    '''Updates the plots for the reults.
+    '''Updates the plots for the results.
 
     Takes the last value from the summary and appends this to the visdom plot.
 

@@ -49,7 +49,7 @@ class DataHandler:
                 try:
                     self.batch_size[k]
                 except KeyError:
-                    self.batch_size[k] = self.batch_size_
+                    self.batch_size[k] = self.batch_size_  # XXX
                 finally:
                     batch_size = self.batch_size[k]
             else:
@@ -98,12 +98,16 @@ class DataHandler:
             if data[0].size()[0] < batch_size:
                 if self.skip_last_batch:
                     raise StopIteration
-                batch_size = data[0].size()[0]
+            batch_size = min(batch_size, data[0].size()[0])
             data = dict((k, v) for k, v in zip(self.input_names[source], data))
             if len(sources) > 1:
                 output[source] = data
             else:
                 output.update(**data)
+
+        if len(sources) > 1:
+            output = {s: {k: v[0:batch_size] for k, v in d.items()}
+                      for s, d in output.items()}
 
         for k, n_vars in self.noise.items():
             n_var = n_vars[self.mode]
@@ -186,10 +190,7 @@ class DataHandler:
 
         def iterator():
             for inputs in loader:
-                inputs = [inp.to(exp.DEVICE) for inp in inputs]
-                inputs_ = []
-                for i, inp in enumerate(inputs):
-                    inputs_.append(inp)
+                inputs_ = [inp.to(exp.DEVICE) for inp in inputs]
                 yield inputs_
         return iterator()
 

@@ -73,18 +73,20 @@ def save(model, prefix=''):
     if binary_dir is None:
         return
 
-    def strip_Nones(d):
-        d_ = {}
-        for k, v in d.items():
-            if isinstance(v, dict):
-                d_[k] = strip_Nones(v)
-            elif v is not None:
-                d_[k] = v
-        return d_
+    #  def strip_Nones(d):
+    #      d_ = {}
+    #      for k, v in d.items():
+    #          if isinstance(v, dict):
+    #              d_[k] = strip_Nones(v)
+    #          elif v is not None:
+    #              d_[k] = v
+    #      return d_
 
-    for net in model.nets.values():
-        if hasattr(net, 'states'):
-            net.states.clear()
+    #  for net in model.nets.values():
+    #      if hasattr(net, 'states'):
+    #          net.states.clear()
+    # TODO: Save optimizers
+    # TODO: Save and reload seeds
 
     state = dict(
         nets=dict(model.nets),
@@ -149,7 +151,7 @@ def setup_device(device):
     if torch.cuda.is_available() and device != 'cpu':
         if device < torch.cuda.device_count():
             logger.info('Using GPU {}'.format(device))
-            DEVICE = torch.device(device)
+            DEVICE = torch.device('cuda', device)
         else:
             logger.info('GPU {} doesn\'t exists. Using CPU'.format(device))
     else:
