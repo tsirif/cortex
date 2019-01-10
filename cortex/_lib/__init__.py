@@ -10,6 +10,7 @@ import pprint
 
 from . import config, exp, log_utils, models
 from .parsing import default_args, parse_args, update_args
+from .random import (reseed, set_prgs_state)
 from .viz import init as viz_init
 
 __author__ = 'R Devon Hjelm'
@@ -91,8 +92,6 @@ def setup_experiment(args, model=None, testmode=False):
                 continue
             exp.ARGS[head][tail] = v
 
-    reload_nets = None
-
     if args.autoreload:
         reload_path = find_autoreload(args.out_path, config.CONFIG.out_path,
                                       args.name or model_name)
@@ -101,6 +100,7 @@ def setup_experiment(args, model=None, testmode=False):
     else:
         reload_path = None
 
+    reload_nets = None
     if reload_path:
         d = exp.reload_model(reload_path)
         exp.INFO.update(**d['info'])
@@ -108,8 +108,6 @@ def setup_experiment(args, model=None, testmode=False):
         exp.SUMMARY.update(**d['summary'])
         update_nested_dicts(d['args'], exp.ARGS)
 
-        if args.name:
-            exp.INFO['name'] = exp.NAME
         if args.out_path or args.name:
             exp.setup_out_dir(args.out_path, config.CONFIG.out_path, exp.NAME,
                               clean=args.clean)
@@ -117,6 +115,9 @@ def setup_experiment(args, model=None, testmode=False):
             exp.OUT_DIRS.update(**d['out_dirs'])
 
         reload_nets = d['nets']
+
+        set_prgs_state(d['prgs'], seed=args.seed)
+
     else:
         if args.load_networks:
             d = exp.reload_model(args.load_networks)
@@ -131,6 +132,9 @@ def setup_experiment(args, model=None, testmode=False):
         exp.INFO['name'] = exp.NAME
         exp.setup_out_dir(args.out_path, config.CONFIG.out_path, exp.NAME,
                           clean=args.clean)
+
+        reseed(args.seed)
+        exp.INFO['initial_seed'] = args.seed
 
     update_nested_dicts(exp.ARGS['model'], model.kwargs)
     exp.ARGS['model'].update(**model.kwargs)

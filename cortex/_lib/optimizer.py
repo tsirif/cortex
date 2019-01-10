@@ -172,6 +172,7 @@ def setup(model, optimizer='Adam', learning_rate=1.e-4,
         op = wrap_optimizer(op)
 
         optimizer = op(params, **optimizer_options_)
+        # TODO Set optimizer state if available
         OPTIMIZERS[network_key] = optimizer
 
         logger.debug(

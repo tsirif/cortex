@@ -179,7 +179,7 @@ def main_loop(model, epochs=500, validate_batches=0,
             for saving the best model.
         save_on_lowest: Saves when lowest of `save_on_best` result is found.
         save_on_highest: Saves when highest of `save_on_best` result is found.
-        full_eval_during_train: Perform one full pass on training set
+        full_eval_during_train: If True, perform one full pass on training set
             to evaluate model during training.
         train_mode: Mode of data to be used during training.
         test_mode: Mode of data to be used during testing.

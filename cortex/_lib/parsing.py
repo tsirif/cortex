@@ -91,7 +91,7 @@ default_help = dict(data=data_help, optimizer=optimizer_help, train=train_help)
 
 _protected_args = ['arch', 'out_path', 'name', 'reload',
                    'args', 'copy_to_local', 'meta', 'config_file',
-                   'clean', 'verbosity', 'test']
+                   'clean', 'verbosity', 'test', 'seed']
 
 logger = logging.getLogger('cortex.parsing')
 
@@ -144,6 +144,9 @@ def make_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument('-v', '--verbosity', type=int, default=1,
                         help='Verbosity of the logging. (0, 1, 2)')
     parser.add_argument('-d', '--device', type=int, default=0)
+    parser.add_argument('-s', '--seed', type=str, default='randomness',
+                        help="A string which will be used to seed "
+                             "experiment's PRGs.")
     return parser
 
 
