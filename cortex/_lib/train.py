@@ -7,10 +7,9 @@ import pprint
 import sys
 import time
 
-import numpy as np
-
-from . import exp, viz
-from .utils import convert_to_numpy, update_dict_of_lists
+from . import (exp, viz)
+from .utils import (convert_to_numpy, summarize_results,
+                    summarize_results_std, update_dict_of_lists)
 from .viz import plot
 
 __author__ = 'R Devon Hjelm'
@@ -19,48 +18,26 @@ __author_email__ = 'erroneus@gmail.com'
 logger = logging.getLogger('cortex.train')
 
 
-def summarize_results(results):
-    results_ = {}
-    for k, v in results.items():
-        if isinstance(v, dict):
-            results_[k] = summarize_results(v)
-        else:
-            if len(v) > 0:
-                try:
-                    results_[k] = np.mean(v)
-                except BaseException:
-                    raise ValueError(
-                        'Something is wrong with result {} of type {}.'.format(
-                            k, type(
-                                v[0])))
+def train_epoch(model, epoch, full_eval_during_train, validate_batches=0,
+                data_mode='train', use_pbar=True):
+    model.train_loop(epoch, data_mode=data_mode, use_pbar=use_pbar,
+                     validate_batches=0)
 
-    return results_
-
-
-def summarize_results_std(results):
-    results_ = {}
-    for k, v in results.items():
-        if isinstance(v, dict):
-            results_[k] = summarize_results(v)
-        else:
-            results_[k] = np.std(v)
-    return results_
-
-
-def train_epoch(model, epoch, eval_during_train, data_mode='train',
-                use_pbar=True):
-    model.train_loop(epoch, data_mode=data_mode, use_pbar=use_pbar)
-
-    if not eval_during_train:
-        return test_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar)
+    if full_eval_during_train:
+        return eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar)
 
     results = summarize_results(model._all_epoch_results)
     return results
 
 
-def test_epoch(model, epoch, data_mode='test', use_pbar=True):
+def eval_epoch(model, epoch, data_mode='train', use_pbar=True):
     model.eval_loop(epoch, data_mode=data_mode, use_pbar=use_pbar)
     results = summarize_results(model._all_epoch_results)
+    return results
+
+
+def test_epoch(model, epoch, data_mode='test', use_pbar=True):
+    results = eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar)
 
     model.data.reset(make_pbar=False, mode='test')
     model.data.next()
@@ -183,22 +160,30 @@ def save_best(model, train_results, best, save_on_best, save_on_lowest):
         return best
 
 
-def main_loop(model, epochs=500, archive_every=10, save_on_best=None,
-              save_on_lowest=None, save_on_highest=None, eval_during_train=True,
+def main_loop(model, epochs=500, validate_batches=0,
+              archive_every=10, test_every=1,
+              save_on_best=None, save_on_lowest=None, save_on_highest=None,
+              full_eval_during_train=False,
               train_mode='train', test_mode='test', eval_only=False,
               pbar_off=False):
     '''
 
     Args:
         epochs: Number of epochs.
-        archive_every: Number of epochs for writing checkpoints.
-        save_on_best: Testing data mode.
-        save_on_lowest: Test on data only (no training).
-        save_on_highest: Quit when nans or infs found.
-        eval_during_train: Saves when highest of this result is found.
-        train_mode: Saves when highest of this result is found.
-        test_mode: Saves when lowest of this result is found.
-        eval_only: Gives results over a training epoch.
+        validate_batches: How many batches to be used in each epoch to validate
+            the model in the beginning of its training loop.
+        archive_every: Period of epochs for writing checkpoints.
+        test_every: Period of epochs for performing tests and
+            expensive visualizations.
+        save_on_best: Name of the key in results to track
+            for saving the best model.
+        save_on_lowest: Saves when lowest of `save_on_best` result is found.
+        save_on_highest: Saves when highest of `save_on_best` result is found.
+        full_eval_during_train: Perform one full pass on training set
+            to evaluate model during training.
+        train_mode: Mode of data to be used during training.
+        test_mode: Mode of data to be used during testing.
+        eval_only: Test on data only (no training).
         pbar_off: Turn off the progressbar.
 
     '''
@@ -209,30 +194,32 @@ def main_loop(model, epochs=500, archive_every=10, save_on_best=None,
     if (viz.visualizer):
         viz.visualizer.text(info, env=exp.NAME, win='info')
     total_time = 0.
+
     if eval_only:
-        test_results, test_std = test_epoch(
-            'Testing', eval_mode=True, mode=test_mode)
+        test_results = test_epoch(model, 'Testing',
+                                  data_mode=test_mode, use_pbar=False)
         convert_to_numpy(test_results)
+        test_std = summarize_results_std(model._all_epoch_results)
         convert_to_numpy(test_std)
 
         display_results(test_results, test_std, 'Evaluation', None, None, None)
         exit(0)
+
     best = None
     if not isinstance(epochs, int):
             epochs = epochs['epochs']
-
     epoch = exp.INFO['epoch']
     first_epoch = epoch
 
     while epoch < epochs:
         try:
-            epoch = exp.INFO['epoch']
             logger.info('Epoch {} / {}'.format(epoch, epochs))
             start_time = time.time()
 
             # TRAINING
             train_results_ = train_epoch(
-                model, epoch, eval_during_train,
+                model, epoch, full_eval_during_train,
+                validate_batches=validate_batches,
                 data_mode=train_mode, use_pbar=not(pbar_off))
             convert_to_numpy(train_results_)
             update_dict_of_lists(exp.SUMMARY['train'], **train_results_)
@@ -242,14 +229,15 @@ def main_loop(model, epochs=500, archive_every=10, save_on_best=None,
                                  save_on_lowest)
 
             # TESTING
-            test_results_ = test_epoch(model, epoch, data_mode=test_mode,
-                                       use_pbar=not(pbar_off))
-
-            convert_to_numpy(test_results_)
-            update_dict_of_lists(exp.SUMMARY['test'], **test_results_)
-            align_summaries(exp.SUMMARY['train'], exp.SUMMARY['test'])
+            if (test_every and epoch % test_every == 0) or \
+                    epoch == epochs - 1 or epoch == first_epoch:
+                test_results_ = test_epoch(model, epoch, data_mode=test_mode,
+                                           use_pbar=not(pbar_off))
+                convert_to_numpy(test_results_)
+                update_dict_of_lists(exp.SUMMARY['test'], **test_results_)
 
             # Finishing up
+            align_summaries(exp.SUMMARY['train'], exp.SUMMARY['test'])
             epoch_time = time.time() - start_time
             total_time += epoch_time
             display_results(train_results_, test_results_, epoch, epochs,
@@ -260,12 +248,13 @@ def main_loop(model, epochs=500, archive_every=10, save_on_best=None,
                 model.viz.show()
                 model.viz.clear()
 
+            exp.INFO['epoch'] += 1
+            epoch = exp.INFO['epoch']
+
             if (archive_every and epoch % archive_every == 0):
                 exp.save(model, prefix=epoch)
             else:
                 exp.save(model, prefix='last')
-
-            exp.INFO['epoch'] += 1
 
         except KeyboardInterrupt:
             def stop_training_query():
