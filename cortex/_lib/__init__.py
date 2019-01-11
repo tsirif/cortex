@@ -78,6 +78,9 @@ def setup_experiment(args, model=None, testmode=False):
     experiment_args = copy.deepcopy(default_args)
     update_args(experiment_args, exp.ARGS)
 
+    exp.configure_from_yaml(config_file=config.DEFAULT_LOCATION)
+    exp.configure_from_yaml(config_file=args.config_file)
+
     if not testmode:
         viz_init(config.CONFIG.viz)
 
@@ -140,8 +143,6 @@ def setup_experiment(args, model=None, testmode=False):
 
     update_nested_dicts(exp.ARGS['model'], model.kwargs)
     exp.ARGS['model'].update(**model.kwargs)
-
-    exp.configure_from_yaml(config_file=args.config_file)
 
     for k, v in exp.ARGS.items():
         logger.info('Ultimate {} arguments: \n{}'

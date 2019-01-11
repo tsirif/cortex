@@ -135,9 +135,9 @@ def make_argument_parser() -> argparse.ArgumentParser:
                         help=('Path to model to reload. Does not load args,'
                               ' info, etc'))
     parser.add_argument('-m', '--meta', type=str, default=None)
-    parser.add_argument('-c', '--config_file', default=None,
-                        help=('Configuration yaml file. '
-                              'See `exps/` for examples'))
+    parser.add_argument('-c', '--config-file', default=None,
+                        help='Configuration yaml file.')
+    #  'See `exps/` for examples'))  # TODO
     parser.add_argument('-k', '--clean', action='store_true', default=False,
                         help=('Cleans the output directory. '
                               'This cannot be undone!'))

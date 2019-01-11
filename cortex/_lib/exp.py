@@ -46,10 +46,10 @@ def configure_from_yaml(config_file=None):
         with open(config_file, 'r') as f:
             d = yaml.load(f)
         logger.info('Loading config {}'.format(d))
-        ARGS.model.update(**d.get('builds', {}))
-        ARGS.optimizer.update(**d.get('optimizer', {}))
-        ARGS.train.update(**d.get('train', {}))
-        ARGS.data.update(**d.get('data', {}))
+        ARGS.get('model').update(**d.get('arch', {}))
+        ARGS.get('optimizer').update(**d.get('optimizer', {}))
+        ARGS.get('train').update(**d.get('train', {}))
+        ARGS.get('data').update(**d.get('data', {}))
 
 
 def reload_model(model_to_reload):

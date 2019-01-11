@@ -24,6 +24,8 @@ class ConfigHandler(Handler):
 CONFIG = ConfigHandler()
 
 _config_name = '.cortex.yml'
+DEFAULT_LOCATION = path.join(path.expanduser('~'), _config_name)
+
 _welcome_message = 'Welcome to cortex! Cortex is a library meant to inject ' \
                    'your PyTorch code into the training loop, automating ' \
                    'common tasks such as optimization, visualization, and ' \
@@ -69,8 +71,7 @@ def set_config():
 
     '''
     global CONFIG
-    pathName = path.expanduser('~')
-    config_file = path.join(pathName, _config_name)
+    config_file = DEFAULT_LOCATION
     isfile = path.isfile(config_file)
 
     if isfile:
@@ -87,15 +88,13 @@ def set_config():
             CONFIG.update(viz=viz, data_paths=data_paths,
                           arch_paths=arch_paths, out_path=out_path)
     else:
-        logger.warning('{} not found'.format(_config_name))
+        logger.warning('{} not found'.format(str(config_file)))
         setup_config_file(config_file)
         set_config()
 
 
 def setup():
-    pathName = path.expanduser('~')
-    config_file = path.join(pathName, _config_name)
-    setup_config_file(config_file)
+    setup_config_file(DEFAULT_LOCATION)
 
 
 def _complete_path(text, state):
