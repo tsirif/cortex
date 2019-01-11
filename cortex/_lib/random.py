@@ -6,7 +6,6 @@ Disclaimer: This module's "private" functions are copied and
 Original Code Repo: https://github.com/obilaniu/Nauka
 Original Code Copyright: Copyright (c) 2018 Olexa Bilaniuk
 Original Code License: MIT License
-Module Author: Christos Tsirigotis (tsirif <at> gmail <dot> com)
 
 """
 
@@ -16,6 +15,9 @@ import random
 import torch
 
 from . import exp
+
+__author__ = 'Tsirigotis Christos'
+__author_email__ = 'tsirif@gmail.com'
 
 
 def _toBytesUTF8(x, errors="strict"):

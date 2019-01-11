@@ -7,7 +7,7 @@ import pprint
 import sys
 import time
 
-from . import (exp, viz)
+from . import (exp, random, viz)
 from .utils import (convert_to_numpy, summarize_results,
                     summarize_results_std, update_dict_of_lists)
 from .viz import plot
@@ -36,12 +36,21 @@ def eval_epoch(model, epoch, data_mode='train', use_pbar=True):
     return results
 
 
-def test_epoch(model, epoch, data_mode='test', use_pbar=True):
+def test_epoch(model, epoch, data_mode='test', use_pbar=True, test_seed=None):
+    train_prg_state = None
+    if test_seed is not None:
+        train_prg_state = random.get_prgs_state()
+        random.reseed(test_seed)
+
     results = eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar)
 
     model.data.reset(make_pbar=False, mode='test')
     model.data.next()
     model.visualize(auto_input=True)
+
+    if train_prg_state is not None:
+        random.set_prgs_state(train_prg_state)
+
     return results
 
 
@@ -161,7 +170,7 @@ def save_best(model, train_results, best, save_on_best, save_on_lowest):
 
 
 def main_loop(model, epochs=500, validate_batches=0,
-              archive_every=10, test_every=1,
+              archive_every=10, test_every=1, test_seed=None,
               save_on_best=None, save_on_lowest=None, save_on_highest=None,
               full_eval_during_train=False,
               train_mode='train', test_mode='test', eval_only=False,
@@ -175,6 +184,9 @@ def main_loop(model, epochs=500, validate_batches=0,
         archive_every: Period of epochs for writing checkpoints.
         test_every: Period of epochs for performing tests and
             expensive visualizations.
+        test_seed: If not ``None``, then model testing happens under the same
+            seeding conditions every time. Training PRG state is not affected
+            by this choice or by the testing.
         save_on_best: Name of the key in results to track
             for saving the best model.
         save_on_lowest: Saves when lowest of `save_on_best` result is found.
@@ -232,7 +244,8 @@ def main_loop(model, epochs=500, validate_batches=0,
             if (test_every and epoch % test_every == 0) or \
                     epoch == epochs - 1 or epoch == first_epoch:
                 test_results_ = test_epoch(model, epoch, data_mode=test_mode,
-                                           use_pbar=not(pbar_off))
+                                           use_pbar=not(pbar_off),
+                                           test_seed=test_seed)
                 convert_to_numpy(test_results_)
                 update_dict_of_lists(exp.SUMMARY['test'], **test_results_)
 
