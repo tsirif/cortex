@@ -13,6 +13,7 @@ import yaml
 import torch
 
 from .log_utils import set_file_logger
+from .optimizer import get_optimizers_state
 from .random import get_prgs_state
 
 __author__ = 'R Devon Hjelm'
@@ -74,11 +75,10 @@ def save(model, prefix=''):
     if binary_dir is None:
         return
 
-    # TODO: Save optimizers
-
     state = dict(
         nets=dict(model.nets),
         prgs=get_prgs_state(),
+        optims=get_optimizers_state(),
         info=INFO,
         args=ARGS,
         out_dirs=OUT_DIRS,

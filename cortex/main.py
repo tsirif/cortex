@@ -31,14 +31,15 @@ def run(model=None):
 
         config.set_config()
         print_section('EXPERIMENT')
-        model, reload_nets = setup_experiment(args, model=model)
+        model, reload_nets, reload_optims = setup_experiment(args, model=model)
         print_section('DATA')
         data.setup(**exp.ARGS['data'])
         print_section('MODEL')
         model.reload_nets(reload_nets)
         model.build()
         print_section('OPTIMIZER')
-        optimizer.setup(model, **exp.ARGS['optimizer'])
+        optimizer.setup(model, reload_states=reload_optims,
+                        **exp.ARGS['optimizer'])
 
     except KeyboardInterrupt:
         print('Cancelled')

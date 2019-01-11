@@ -101,6 +101,7 @@ def setup_experiment(args, model=None, testmode=False):
         reload_path = None
 
     reload_nets = None
+    reload_optims = None
     if reload_path:
         d = exp.reload_model(reload_path)
         exp.INFO.update(**d['info'])
@@ -115,6 +116,7 @@ def setup_experiment(args, model=None, testmode=False):
             exp.OUT_DIRS.update(**d['out_dirs'])
 
         reload_nets = d['nets']
+        reload_optims = d['optims']
 
         set_prgs_state(d['prgs'], seed=args.seed)
 
@@ -145,4 +147,4 @@ def setup_experiment(args, model=None, testmode=False):
         logger.info('Ultimate {} arguments: \n{}'
                     .format(k, pprint.pformat(v)))
 
-    return model, reload_nets
+    return model, reload_nets, reload_optims

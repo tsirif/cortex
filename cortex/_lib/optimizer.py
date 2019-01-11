@@ -24,6 +24,13 @@ _optimizer_defaults = dict(
 )
 
 
+def get_optimizers_state():
+    state = dict()
+    for network_key, optimizer in OPTIMIZERS.items():
+        state[network_key] = optimizer.state_dict()
+    return state
+
+
 def wrap_optimizer(C):
     class Op(C):
         def __init__(self, params, clipping=None, **kwargs):
@@ -68,7 +75,7 @@ def wrap_optimizer(C):
 
 def setup(model, optimizer='Adam', learning_rate=1.e-4,
           weight_decay={}, clipping={}, optimizer_options={},
-          model_optimizer_options={}):
+          model_optimizer_options={}, reload_states=None):
     '''Optimizer entrypoint.
 
     Args:
@@ -142,7 +149,7 @@ def setup(model, optimizer='Adam', learning_rate=1.e-4,
 
         # Needed for reloading.
         for p in params:
-            p.requires_grad = True
+            p.requires_grad_(True)
 
         # Learning rates
         if isinstance(learning_rate, dict):
@@ -172,7 +179,10 @@ def setup(model, optimizer='Adam', learning_rate=1.e-4,
         op = wrap_optimizer(op)
 
         optimizer = op(params, **optimizer_options_)
-        # TODO Set optimizer state if available
+
+        if reload_states and network_key in reload_states:
+            optimizer.load_state_dict(reload_states[network_key])
+
         OPTIMIZERS[network_key] = optimizer
 
         logger.debug(
