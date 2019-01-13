@@ -222,11 +222,17 @@ def plot(epoch, init=False):
 
         return X, Y, legend
 
+    def get_list_of_avg(list_of_stats):
+        try:
+            return list(map(lambda x: x[0], list_of_stats)) if list_of_stats else None
+        except TypeError:
+            list_of_stats
+
     train_summary = exp.SUMMARY['train']
     test_summary = exp.SUMMARY['test']
     for k in train_summary.keys():
         v_train = train_summary[k]
-        v_test = test_summary[k] if k in test_summary.keys() else None
+        v_test = test_summary.get(k, None)
 
         if isinstance(v_train, dict):
             Y = []
@@ -234,12 +240,16 @@ def plot(epoch, init=False):
             legend = []
             for k_ in v_train:
                 vt = v_test.get(k_) if v_test is not None else None
-                X_, Y_, legend_ = get_X_Y_legend(k_, v_train[k_], vt)
+                X_, Y_, legend_ = get_X_Y_legend(k_,
+                                                 get_list_of_avg(v_train[k_]),
+                                                 get_list_of_avg(vt))
                 Y += Y_
                 X += X_
                 legend += legend_
         else:
-            X, Y, legend = get_X_Y_legend(k, v_train, v_test)
+            X, Y, legend = get_X_Y_legend(k,
+                                          get_list_of_avg(v_train),
+                                          get_list_of_avg(v_test))
 
         opts = dict(
             xlabel='epochs',

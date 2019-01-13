@@ -122,7 +122,7 @@ def compute_tsne(X, perplexity=40, n_iter=300, init='pca'):
     return tsne.fit_transform(points)
 
 
-def summarize_results(results):
+def summarize_results(results, with_std=True):
     results_ = {}
     for k, v in results.items():
         if isinstance(v, dict):
@@ -130,23 +130,15 @@ def summarize_results(results):
         else:
             if len(v) > 0:
                 try:
-                    results_[k] = np.mean(v)
-                except BaseException:
-                    raise ValueError(
-                        'Something is wrong with result {} of type {}.'.format(
-                            k, type(v[0])))
-    return results_
-
-
-def summarize_results_std(results):
-    results_ = {}
-    for k, v in results.items():
-        if isinstance(v, dict):
-            results_[k] = summarize_results_std(v)
-        else:
-            if len(v) > 0:
-                try:
-                    results_[k] = np.std(v)
+                    v = np.asarray(v)
+                    mv = np.mean(v)
+                    if with_std:
+                        minv = np.min(v)
+                        maxv = np.max(v)
+                        stdv = np.std(v, ddof=1)
+                        results_[k] = (mv, stdv, minv, maxv)
+                    else:
+                        results_[k] = mv
                 except BaseException:
                     raise ValueError(
                         'Something is wrong with result {} of type {}.'.format(

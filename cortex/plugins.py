@@ -327,13 +327,12 @@ class ModelPlugin(ModelPluginBase):
                 results['losses'] = dict(self._all_epoch_losses)
                 results['times'] = dict((k, sum(v))
                                         for k, v in self._all_epoch_times.items())
-                validation = summarize_results(results)
+                validation = summarize_results(results, with_std=False)
 
+                self._reset_epoch()
                 self._all_validation._allow_overwrite = True
                 update_nested_dict(self._all_validation, **validation)
                 self._all_validation._allow_overwrite = False
-
-                self._reset_epoch()
 
                 self.autotune()
 

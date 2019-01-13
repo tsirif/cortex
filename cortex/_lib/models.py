@@ -182,11 +182,15 @@ class ModelPluginBase(metaclass=PluginType):
         cls._all_losses.clear()
         cls._all_results.clear()
 
+        cls._all_validation.clear()
+        cls._all_tunables.clear()
         cls._all_epoch_results.clear()
         cls._all_epoch_losses.clear()
         cls._all_epoch_times.clear()
 
     def _reset_epoch(self):
+        self._all_validation.clear()
+        self._all_tunables.clear()
         self._all_epoch_results.clear()
         self._all_epoch_losses.clear()
         self._all_epoch_times.clear()
@@ -532,6 +536,7 @@ class ModelPluginBase(metaclass=PluginType):
 
             output = fn(*args, **kwargs)
             self.losses.clear()
+            self.results.clear()
 
             return output
 
