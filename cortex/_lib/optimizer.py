@@ -128,7 +128,7 @@ def setup(model, optimizer='Adam', learning_rate=1.e-4,
                     torch.cuda.device_count()))
 
     model._reset_epoch()
-    model.data.reset(make_pbar=False, mode='test')
+    model.data.reset(make_pbar=False, mode='train')
     model.train_step(_init=True)
     model.visualize(auto_input=True)
 

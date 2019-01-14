@@ -107,15 +107,13 @@ class ModelPluginBase(metaclass=PluginType):
     _optimizers = optimizer.OPTIMIZERS
 
     _training_nets = dict()
-
     _all_nets = NetworkHandler(allow_overwrite=False)
-    _all_losses = LossHandler(_all_nets, add_values=True)
-    # TODO(Devon): This is done in conjunction with clearing all losses
-    # after train_step.
+
+    _all_losses = LossHandler(_all_nets)
     _all_results = ResultsHandler()
+
     _all_validation = ResultsHandler(allow_overwrite=False)
     _all_tunables = TunablesHandler()
-
     _all_epoch_results = ResultsHandler()
     _all_epoch_losses = ResultsHandler()
     _all_epoch_times = ResultsHandler()
@@ -138,26 +136,19 @@ class ModelPluginBase(metaclass=PluginType):
             self._accept_contract(contract)
 
         self._all_tunables.share_global_kwargs(self._kwargs)
-        if self._contract and len(self._contract['nets']) > 0:
-            self._nets = aliased(self._all_nets, aliases=contract['nets'])
-            self._losses = aliased(self._all_losses, aliases=contract['nets'])
-            self._epoch_losses = aliased(
-                self._all_epoch_losses, aliases=contract['nets'])
-            self._tunables = aliased(self._all_tunables,
-                                     aliases=contract['kwargs'])
-        else:
-            self._nets = aliased(self._all_nets)
-            self._losses = aliased(self._all_losses)
-            self._epoch_losses = aliased(self._all_epoch_losses)
-            self._tunables = aliased(self._all_tunables)
+        self._tunables = aliased(self._all_tunables,
+                                 aliases=self.contract_kwargs)
+        self._nets = aliased(self._all_nets, aliases=self.contract_nets)
+        self._losses = aliased(self._all_losses, aliases=self.contract_nets)
 
-        self.wrap_functions()
-
-        self._results = prefixed(
-            self._all_results, prefix=self.name)
+        self._results = prefixed(self._all_results, prefix=self.name)
         self._epoch_results = prefixed(
             self._all_epoch_results, prefix=self.name)
+        self._epoch_losses = prefixed(
+            self._all_epoch_losses, prefix=self.name)
         self._epoch_times = self._all_epoch_times
+
+        self.wrap_functions()
 
     def wrap_functions(self):
         self._wrap_routine()
@@ -211,6 +202,18 @@ class ModelPluginBase(metaclass=PluginType):
     def kwargs(self):
         return self._kwargs
 
+    @property
+    def contract_nets(self):
+        return self._contract['nets'] if self._contract is not None else {}
+
+    @property
+    def contract_kwargs(self):
+        return self._contract['kwargs'] if self._contract is not None else {}
+
+    @property
+    def contract_inputs(self):
+        return self._contract['inputs'] if self._contract is not None else {}
+
     def inputs(self, *keys):
         '''Pulls inputs from the data.
 
@@ -223,11 +226,7 @@ class ModelPluginBase(metaclass=PluginType):
             Tensor variables.
 
         '''
-
-        if self._contract is not None:
-            input_dict = self._contract['inputs']
-        else:
-            input_dict = {}
+        input_dict = self.contract_inputs
 
         inputs = []
         for k in keys:
@@ -293,33 +292,30 @@ class ModelPluginBase(metaclass=PluginType):
         '''
         if isinstance(value, ModelPluginBase):
             model = value
-            kwargs = model.kwargs
-            help = model.help
 
             # Translate aggregated model's kwargs to self's
-            if model._contract:
-                kwargs = dict((model._contract['kwargs'].get(k, k), v)
-                              for k, v in kwargs.items() if v is not None)
-                help = dict((model._contract['kwargs'].get(k, k), v)
-                            for k, v in help.items())
+            kwargs = dict((model.contract_kwargs.get(k, k), v)
+                          for k, v in model.kwargs.items() if v is not None)
+            help = dict((model.contract_kwargs.get(k, k), v)
+                        for k, v in model.help.items())
 
             # Complete self's kwargs with aggregated model's
             for k, v in kwargs.items():
-                if k not in self.kwargs or self.kwargs[k] is None:
-                    self.kwargs[k] = copy.deepcopy(v)
+                if k not in self._kwargs or self._kwargs[k] is None:
+                    self._kwargs[k] = copy.deepcopy(v)
             self._all_tunables.share_global_kwargs(self.kwargs)
             for k, v in help.items():
                 if k not in self.help:
                     self.help[k] = help[k]
             # Make total kwargs known to the tree of models with self as root
-            model._set_kwargs(self.kwargs)
+            model._set_kwargs(self._kwargs)
 
             # Overwrite model's name by its usage
             model.name = key
-            model._results = prefixed(
-                model._all_results, prefix=model.name)
             model._epoch_results = prefixed(
                 model._all_epoch_results, prefix=model.name)
+            model._epoch_losses = prefixed(
+                self._all_epoch_losses, prefix=model.name)
             self._models.append(model)
 
         super().__setattr__(key, value)
@@ -394,10 +390,7 @@ class ModelPluginBase(metaclass=PluginType):
         '''
 
         def _fetch_kwargs(**kwargs_):
-            if self._contract is not None:
-                kwarg_dict = self._contract['kwargs']
-            else:
-                kwarg_dict = {}
+            kwarg_dict = self.contract_kwargs
             kwarg_keys = parse_kwargs(fn).keys()
 
             kwargs = dict()
@@ -456,55 +449,62 @@ class ModelPluginBase(metaclass=PluginType):
         def wrapped(*args, **kwargs):
             fid = self._get_id(fn)
 
+            training_nets = []
             if fid not in self._training_nets:
-                losses_before = dict(kv for kv in self._all_losses.items())
+                loss_contributions = LossHandler(self._all_nets)
+                self._losses = aliased(loss_contributions,
+                                       aliases=self.contract_nets)
+                result_contributions = ResultsHandler()
+                self._results = prefixed(result_contributions,
+                                         prefix=self.name)
                 fn(*args, **kwargs)
-                losses_after = dict(kv for kv in self._all_losses.items())
-
                 training_nets = []
-
-                for k, v in losses_after.items():
-                    try:
-                        if k not in losses_before:
-                            training_nets.append(k)
-                        elif v != losses_before[k]:
-                            training_nets.append(k)
-                    except TypeError:
-                        training_nets.append(k)
+                for k in loss_contributions.keys():
+                    training_nets.append(k)
                 self._training_nets[fid] = training_nets
-                for k in training_nets:
-                    self.losses.pop(k)
             else:
                 training_nets = self._training_nets[fid]
 
-            if self._train:
-                for k in training_nets:
-                    net = self.nets[k]
-
+            for k, net in self.nets.items():
+                training = self._train and k in training_nets
+                #  net.train()
+                if training:
                     optimizer = self._optimizers.get(k)
                     if optimizer is not None:
                         optimizer.zero_grad()
+                for p in net.parameters():
+                    p.requires_grad_(training)
 
-                    for p in net.parameters():
-                        p.requires_grad_(True)
-
-                    net.train()
+            # Create fresh handlers to isolate this routine's contributions
+            loss_contributions = LossHandler(self._all_nets)
+            self._losses = aliased(loss_contributions,
+                                   aliases=self.contract_nets)
+            result_contributions = ResultsHandler()
+            self._results = prefixed(result_contributions, prefix=self.name)
 
             start = time.time()
             output = fn(*args, **kwargs)
             self._check_bad_values()
             end = time.time()
 
-            update_dict_of_lists(self._epoch_results, **self.results)
+            # Append results with a prefixed key to epoch results list
+            for k, v in result_contributions.items():
+                self._all_results[k] = v
+            update_dict_of_lists(self._epoch_results, **self._results)
+            self._results = prefixed(self._all_results, prefix=self.name)
+
+            # Append routine times with a prefixed key to epoch times list
             update_dict_of_lists(self._epoch_times,
                                  **{self.name: end - start})
+
+            # Append loss contributions with a prefixed key to epoch losses list
             losses = dict()
-            for k, v in self.losses.items():
-                if isinstance(v, (tuple, list)):
-                    losses[k] = sum([v_.item() for v_ in v])
-                else:
-                    losses[k] = v.item()
+            for k, v in loss_contributions.items():  # k here is unaliased name
+                losses[k] = v.item()
+                self._all_losses[k] += v
+            # unaliased name will be prefixed to show contribution
             update_dict_of_lists(self._epoch_losses, **losses)
+            self._losses = aliased(self._all_losses, aliases=self.contract_nets)
 
             return output
 
@@ -535,8 +535,8 @@ class ModelPluginBase(metaclass=PluginType):
                     net.eval()
 
             output = fn(*args, **kwargs)
-            self.losses.clear()
-            self.results.clear()
+            self._all_losses.clear()
+            self._all_results.clear()
 
             return output
 
@@ -597,14 +597,14 @@ class ModelPluginBase(metaclass=PluginType):
         bads = bad_values(self.results)
         if bads:
             print(
-                'Bad values found (quitting): {} \n All:{}'.format(
+                'Bad values found in results (quitting): {} \n All:{}'.format(
                     bads, self.results))
             exit(0)
 
         bads = bad_values(self.losses)
         if bads:
             print(
-                'Bad values found (quitting): {} \n All:{}'.format(
+                'Bad values found in losses (quitting): {} \n All:{}'.format(
                     bads, self.losses))
             exit(0)
 

@@ -296,15 +296,12 @@ class ModelPlugin(ModelPluginBase):
         This can be overridden to change the behavior of the optimizer.
 
         """
-        keys = self.losses.keys()
+        keys = self._all_losses.keys()
 
         for i, k in enumerate(keys):
-            loss = self.losses.pop(k)
+            loss = self._all_losses.pop(k)
             loss.backward(retain_graph=(i < len(keys)))
-            #  TODO(Devon): Is this a good idea?
-            key = self.nets._aliases.get(k, k)
-
-            optimizer = self._optimizers.get(key)
+            optimizer = self._optimizers.get(k)
             if optimizer is not None:
                 optimizer.step()
 
@@ -330,9 +327,7 @@ class ModelPlugin(ModelPluginBase):
                 validation = summarize_results(results, with_std=False)
 
                 self._reset_epoch()
-                self._all_validation._allow_overwrite = True
                 update_nested_dict(self._all_validation, **validation)
-                self._all_validation._allow_overwrite = False
 
                 self.autotune()
 
