@@ -7,6 +7,8 @@ import logging
 
 import torch
 
+from . import exp
+
 logger = logging.getLogger('cortex.handlers')
 
 
@@ -150,7 +152,7 @@ def aliased(handler, aliases=None):
     return AliasedHandler(handler, aliases=aliases)
 
 
-class PrefixedAliasedHandler(Handler):
+class PrefixedHandler(Handler):
     def __init__(self, handler, prefix=None):
         self._prefix = prefix or ''
         self._handler = handler
@@ -206,7 +208,7 @@ class PrefixedAliasedHandler(Handler):
 
 
 def prefixed(handler, prefix=None):
-    return PrefixedAliasedHandler(handler, prefix=prefix)
+    return PrefixedHandler(handler, prefix=prefix)
 
 
 class NetworkHandler(Handler):
@@ -269,30 +271,25 @@ class LossHandler(Handler):
     _type = torch.Tensor
     _get_error_string = 'Loss `{}` not found. You must add it as a dict entry'
 
-    def __init__(self, nets, *args, method='append', **kwargs):
+    def __init__(self, nets, *args, **kwargs):
         self._nets = nets
-        if method not in ('append', 'overwrite', 'add'):
-            raise ValueError(method)
-        self._method = method
         super().__init__(*args, **kwargs)
 
-    def _check_keyvalue(self, k, v):
-        if isinstance(v, (list, tuple)):
-            for v_ in v:
-                super()._check_keyvalue(k, v_)
-            if len(v_.size()) > 0:
-                raise ValueError(
-                    'Loss must be a scalar. Got {}'.format(v_.size()))
-        else:
-            super()._check_keyvalue(k, v)
-            if len(v.size()) > 0:
-                raise ValueError(
-                    'Loss must be a scalar. Got {}'.format(v.size()))
-
+    def _check_key(self, k):
         if k not in self._nets:
             raise AttributeError(
                 'Keyword `{}` not in the model_handler. Found: {}.'.format(
                     k, tuple(self._nets.keys())))
+
+        return True
+
+    def _check_keyvalue(self, k, v):
+        super()._check_keyvalue(k, v)
+        if len(v.size()) > 0:
+            raise ValueError(
+                'Loss must be a scalar. Got {}'.format(v.size()))
+
+        self._check_key(k)
 
         return True
 
@@ -309,6 +306,19 @@ class LossHandler(Handler):
 
         self._check_keyvalue(key, value)
         super().__setattr__(key, value)
+
+    def __missing__(self):
+        return torch.zeros([], device=exp.DEVICE)  # XXX
+
+    def __getitem__(self, key):
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            self._check_key(key)
+            return self.__missing__()
+
+    def __getattr__(self, key):
+        return self.__getitem__(key)
 
 
 class TunablesHandler(Handler):
