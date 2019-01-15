@@ -9,6 +9,7 @@ from torch import nn
 logger = logging.getLogger('cortex.arch.modules' + __name__)
 
 
+# TODO Expose hyperparameters of non-linearities later
 def get_nonlinearity(nonlinearity=None):
     if not nonlinearity:
         pass
