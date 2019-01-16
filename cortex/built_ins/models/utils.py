@@ -91,7 +91,8 @@ def ms_ssim(X_a, X_b, window_size=11, size_average=True, C1=0.01**2, C2=0.03**2)
         return ssim_map.mean(1).mean(1).mean(1)
 
 
-resnet_encoder_args_ = dict(dim_h=64, batch_norm=True, f_size=3, n_steps=3)
+resnet_encoder_args_ = dict(dim_h=64, dim_h_max=512, batch_norm=True,
+                            f_size=3, n_steps=3)
 mnist_encoder_args_ = dict(dim_h=64, batch_norm=True, f_size=5,
                            pad=2, stride=2, min_dim=7)
 convnet_encoder_args_ = dict(dim_h=64, batch_norm=True, n_steps=3)
@@ -144,15 +145,17 @@ def update_encoder_args(x_shape, model_type='convnet', encoder_args=None):
         raise NotImplementedError(model_type)
 
     encoder_args_.update(**encoder_args)
-    if x_shape[0] == 64:
-        encoder_args_['n_steps'] = 4
-    elif x_shape[0] == 128:
-        encoder_args_['n_steps'] = 5
+    log_x_shape_f, log_x_shape_i = math.modf(math.log(x_shape[0], 2))
+    assert(log_x_shape_f == 0)
+    log_x_shape_i = int(log_x_shape_i)
+    n_steps = log_x_shape_i - 2
+    encoder_args_['n_steps'] = max(n_steps, encoder_args_['n_steps'])
 
     return Encoder, encoder_args_
 
 
-resnet_decoder_args_ = dict(dim_h=64, batch_norm=True, f_size=3, n_steps=3)
+resnet_decoder_args_ = dict(dim_h=64, dim_h_max=512, batch_norm=True,
+                            f_size=3, n_steps=3)
 mnist_decoder_args_ = dict(dim_h=64, batch_norm=True, f_size=4,
                            pad=1, stride=2, n_steps=2)
 convnet_decoder_args_ = dict(dim_h=64, batch_norm=True, n_steps=3)
@@ -176,10 +179,11 @@ def update_decoder_args(x_shape, model_type='convnet', decoder_args=None):
         raise NotImplementedError(model_type)
 
     decoder_args_.update(**decoder_args)
-    if x_shape[0] >= 64:
-        decoder_args_['n_steps'] = 4
-    elif x_shape[0] == 128:
-        decoder_args_['n_steps'] = 5
+    log_x_shape_f, log_x_shape_i = math.modf(math.log(x_shape[0], 2))
+    assert(log_x_shape_f == 0)
+    log_x_shape_i = int(log_x_shape_i)
+    n_steps = log_x_shape_i - 2
+    decoder_args_['n_steps'] = max(n_steps, decoder_args_['n_steps'])
 
     return Decoder, decoder_args_
 
@@ -190,3 +194,17 @@ def to_one_hot(y, K):
     one_hot = torch.zeros(y.size(0), K).cuda()
     one_hot.scatter_(1, y_.data.cuda(), 1)
     return torch.tensor(one_hot)
+
+
+def update_average_model(target_net, source_net, beta):
+    for p in target_net.parameters():
+        p._requires_grad(False)
+    for p in source_net.parameters():
+        p._requires_grad(False)
+
+    param_dict_src = dict(source_net.named_parameters())
+
+    for p_name, p_target in target_net.named_parameters():
+        p_source = param_dict_src[p_name]
+        assert(p_source is not p_target)
+        p_target.add_(p_source.sub(p_target).mul(1. - beta))
