@@ -43,7 +43,7 @@ def test_epoch(model, epoch, data_mode='test', use_pbar=True, test_seed=None):
 
     results = eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar)
 
-    model.data.reset(make_pbar=False, mode='train')
+    model.data.reset(make_pbar=False, mode='test')
     model.data.next()
     model.visualize(auto_input=True)
 

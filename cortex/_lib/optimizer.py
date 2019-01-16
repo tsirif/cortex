@@ -116,16 +116,16 @@ def setup(model, optimizer='Adam', learning_rate=1.e-4,
         raise NotImplementedError(
             'Optimizer not supported `{}`'.format(optimizer))
 
-    for network_key, network in model.nets.items():
+    for network in model.nets.values():
         # Set model parameters to cpu or gpu
         network.to(exp.DEVICE)
         # TODO(Devon): is the next line really doing anything?
-        if str(exp.DEVICE) == 'cpu':
-            pass
-        else:
-            torch.nn.DataParallel(
-                network, device_ids=range(
-                    torch.cuda.device_count()))
+        #  if str(exp.DEVICE) == 'cpu':
+        #      pass
+        #  else:
+        #      torch.nn.DataParallel(
+        #          network, device_ids=range(
+        #              torch.cuda.device_count()))
 
     model._reset_epoch()
     model.data.reset(make_pbar=False, mode='train')
