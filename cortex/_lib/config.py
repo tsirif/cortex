@@ -21,10 +21,42 @@ class ConfigHandler(Handler):
         super().__init__(viz={}, data_paths={}, arch_paths={}, out_path=None)
 
 
-CONFIG = ConfigHandler()
-
 _config_name = '.cortex.yml'
 DEFAULT_LOCATION = path.join(path.expanduser('~'), _config_name)
+
+
+def set_config():
+    '''Sets up cortex config.
+
+    Reads from a configuration file. If file doesn't exist, it warns and returns.
+
+    '''
+    config = ConfigHandler()
+    config_file = DEFAULT_LOCATION
+    isfile = path.isfile(config_file)
+
+    if not isfile:
+        logger.warning(str(config_file) + ' not found.\n'
+                       'Run ``cortex setup`` or create a user-wide config file.')
+        return config
+
+    logger.debug('Open config file {}'.format(config_file))
+    with open(config_file, 'r') as f:
+        d = yaml.load(f)
+        logger.debug('User-defined configs: {}'.format(pprint.pformat(d)))
+
+        viz = d.get('viz', {})
+        data_paths = d.get('data_paths', {})
+        arch_paths = d.get('arch_paths', {})
+        out_path = d.get('out_path', None)
+
+        config.update(viz=viz, data_paths=data_paths,
+                      arch_paths=arch_paths, out_path=out_path)
+
+    return config
+
+
+CONFIG = set_config()
 
 _welcome_message = 'Welcome to cortex! Cortex is a library meant to inject ' \
                    'your PyTorch code into the training loop, automating ' \
@@ -61,36 +93,6 @@ _out_message = 'Cortex requires an out path to store experiment files. ' \
                'This will be the location of binaries, as well as other ' \
                'results from experiments.'
 _out_path_message = 'Enter the path to the output directory: [{}] '
-
-
-def set_config():
-    ''' Setups up cortex config.
-
-    Reads from a configuration file. If file doesn't exist, this starts the
-    config file setup.
-
-    '''
-    global CONFIG
-    config_file = DEFAULT_LOCATION
-    isfile = path.isfile(config_file)
-
-    if isfile:
-        logger.debug('Open config file {}'.format(config_file))
-        with open(config_file, 'r') as f:
-            d = yaml.load(f)
-            logger.debug('User-defined configs: {}'.format(pprint.pformat(d)))
-
-            viz = d.get('viz', {})
-            data_paths = d.get('data_paths', {})
-            arch_paths = d.get('arch_paths', {})
-            out_path = d.get('out_path', None)
-
-            CONFIG.update(viz=viz, data_paths=data_paths,
-                          arch_paths=arch_paths, out_path=out_path)
-    else:
-        logger.warning('{} not found'.format(str(config_file)))
-        setup_config_file(config_file)
-        set_config()
 
 
 def setup():
