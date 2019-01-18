@@ -2,15 +2,21 @@
 
 '''
 
+import os
+import functools
 import math
 
+from cortex._lib.config import CONFIG
+from cortex._lib.exp import DEVICE
 from cortex.built_ins.networks.fully_connected import FullyConnectedNet
 from cortex.plugins import register_plugin, ModelPlugin
+import numpy as np
 import torch
 from torch import autograd
 import torch.nn.functional as F
 
-from .utils import log_sum_exp, update_decoder_args, update_encoder_args
+from .utils import (log_sum_exp, ms_ssim, update_decoder_args,
+                    update_encoder_args, update_average_model)
 
 
 def raise_measure_error(measure):
@@ -81,7 +87,7 @@ def get_boundary(samples, measure):
         b = samples ** 2
     elif measure == 'X2':
         b = (samples / 2.) ** 2
-    elif measure == 'W':
+    elif measure == 'W1':
         b = None
     else:
         raise_measure_error(measure)
@@ -133,8 +139,6 @@ class GradientPenalty(ModelPlugin):
 
         if penalty:
             self.losses.network = penalty
-            key = penalty_type + '_' + 'penalty'
-            self.results[key] = penalty.item()
 
     @staticmethod
     def _get_gradient(inp, output):
@@ -215,7 +219,6 @@ class Discriminator(ModelPlugin):
                 Hellinger), DV (Donsker Varahdan KL), W1 (IPM)}
 
         """
-
         X_P = real
         X_Q = fake
         E_pos, E_neg, P_samples, Q_samples = self.score(X_P, X_Q, measure)
@@ -270,7 +273,8 @@ class SimpleDiscriminator(Discriminator):
 class Generator(ModelPlugin):
 
     def build(self, dim_z=64, generator_type: str='convnet',
-              generator_args=dict(output_nonlinearity='tanh')):
+              generator_args=dict(output_nonlinearity='tanh'),
+              average_weight_model: float=0):
         """
 
         Args:
@@ -278,6 +282,7 @@ class Generator(ModelPlugin):
             dim_z: Input noise dimension for generator.
             generator_type: Generator network type.
             generator_args: Generator network arguments.
+            average_weight_model: If >0, keep a moving average model for testing.
 
         """
         x_shape = self.get_dims('x', 'y', 'c')
@@ -285,8 +290,20 @@ class Generator(ModelPlugin):
         Decoder, generator_args = update_decoder_args(
             x_shape, model_type=generator_type, decoder_args=generator_args)
         generator = Decoder(x_shape, dim_in=dim_z, **generator_args)
-
         self.nets.generator = generator
+
+        awm = average_weight_model
+        assert(awm >= 0 and 1 > awm)
+        if awm > 0:
+            self.nets.test_generator = generator.clone()
+        else:
+            self.nets.test_generator = generator
+
+    def train_step(self, average_weight_model: float=0):
+        super().train_step()
+        if average_weight_model > 0:
+            update_average_model(self.nets.test_generator, self.nets.generator,
+                                 beta=average_weight_model)
 
     def routine(self, Z, measure: str=None, loss_type: str='non-saturating'):
         """
@@ -297,24 +314,210 @@ class Generator(ModelPlugin):
 
         """
         discriminator = self.nets.discriminator
-        generator = self.nets.generator
 
-        X_Q = generator(Z)
+        X_Q = self.generate(Z)
         samples = discriminator(X_Q)
 
         g_loss = generator_loss(samples, measure, loss_type=loss_type)
-        weights = get_weight(samples, measure)
-
         self.losses.generator = g_loss
-        if weights is not None:
-            self.results.Weights = weights.mean().item()
 
     def generate(self, Z):
-        return self.nets.generator(Z)
+        _generated = self.generated
+        if self._train:
+            generator = self.nets.generator
+        else:
+            generator = self.nets.test_generator
+        return generator(Z) if _generated is None else _generated
+
+    @property
+    def generated(self):
+        ret = self._use_generated
+        self._use_generated = None
+        return ret
+
+    @generated.setter
+    def generated(self, generated_):
+        self._use_generated = generated_
 
     def visualize(self, Z):
         X_Q = self.generate(Z)
         self.add_image(X_Q, name='generated')
+
+
+class GeneratorEvaluator(ModelPlugin):
+    """A module for testing a generator model."""
+
+    @staticmethod
+    def _default_inception_tar_filename():
+        default_filename = 'frozen_inception_v1.tar.gz'
+        _local_path = CONFIG.data_paths.get('local')
+        if _local_path is not None:
+            return os.path.join(os.abspath(_local_path), default_filename)
+        return os.path.join('/tmp/cortex', default_filename)
+
+    _default_filename = _default_inception_tar_filename()
+    _num_of_kid_blocks = 8
+
+    @staticmethod
+    def pytorch_to_tf_device(device):
+        try:
+            device_id, device_num = str(device).split(':')
+        except ValueError:
+            device_id == 'cpu'
+        if device_id == 'cpu':
+            tf_device_str = "/cpu:0"
+        elif device_id == 'cuda':
+            tf_device_str = "/device:GPU:" + str(device_num)
+        else:
+            raise ValueError("Unknown pytorch to tensorflow device conversion.")
+        return tf_device_str
+
+    @classmethod
+    def _get_inception_graph(cls, tar_filename):
+        """Fetch inception graph tarball in a persistent `tarball_location`."""
+        import tensorflow.contrib.gan.eval as tfgan
+        return tfgan.get_graph_def_from_url_tarball(
+            tfgan.INCEPTION_URL, tfgan.INCEPTION_FROZEN_GRAPH,
+            os.path.abspath(tar_filename))
+
+    def __init__(self):
+        super().__init__()
+        self.tf = None
+        self.array_ops = None
+        self.functional_ops = None
+        self.tfgan = None
+
+    def routine(self, reals, fakes,
+                use_inception_score=True,
+                use_fid=False, use_kid=False, use_ms_ssim=False,
+                inception_tar_filename=_default_filename):
+        """
+            Args:
+                use_inception_score:
+                use_fid:
+                use_kid:
+                use_ms_ssim:
+                inception_tar_filename:
+
+        """
+        # TODO Verify that this plugin works correctly!!!
+        # NOTE: `reals` should not have any meaningful sorting in order to
+        #       calculate a correct estimation of Kernel Inception Distance.
+        reals_len = reals.size()[0]
+        fakes_len = fakes.size()[0]
+
+        if any((use_inception_score, use_fid, use_kid)):
+            import tensorflow as tf
+            self.tf = tf
+            from tensorflow.python.ops import array_ops
+            self.array_ops = array_ops
+            from tensorflow.python.ops import functional_ops
+            self.functional_ops = functional_ops
+            tfgan = tf.contrib.gan.eval
+            self.tfgan = tfgan
+
+            with tf.device(GeneratorEvaluator.pytorch_to_tf_device(DEVICE)):
+                inception_graph = self._get_inception_graph(inception_tar_filename)
+
+                output_tensor = []
+                output_tensor += [tfgan.INCEPTION_FINAL_POOL] if use_fid or use_kid else []
+                output_tensor += [tfgan.INCEPTION_OUTPUT] if use_inception_score else []
+
+                acts = self.precalc_inception_activations(reals if use_fid or use_kid else None,
+                                                          fakes,
+                                                          output_tensor, inception_graph)
+                real_a, real_l, gen_a, gen_l = acts
+
+                eval_scores = {}
+                if use_inception_score:
+                    is_fn = tfgan.classifier_score_from_logits
+                    score = is_fn(gen_l)
+                    eval_scores['IS'] = score
+
+                if use_fid:
+                    # Use O(n) estimation of FID (diagonal only calc of covariances)
+                    # TODO perhaps use a hyperparameter to select available variant
+                    fid_fn = tfgan.diagonal_only_frechet_classifier_distance_from_activations
+                    fid = fid_fn(real_a, gen_a)
+                    eval_scores['FID'] = fid
+
+                if use_kid:
+                    # Split data into 8 blocks and calculate estimations of
+                    # KID and its std
+                    # TODO perhaps introduce a hparam to control splits
+                    kid_fn = tfgan.kernel_classifier_distance_and_std_from_activations
+                    kid_fn = functools.partial(kid_fn,
+                                               max_block_size=fakes_len // self._num_of_kid_blocks)
+                    kid_mean, kid_std = kid_fn(real_a, gen_a)
+                    eval_scores['KID'] = kid_mean
+                    eval_scores['KID_std'] = kid_std
+
+            # Execute collected scores
+            sess = tf.Session()
+            with sess.as_default():
+                eval_scores = sess.run(eval_scores)
+
+            # Log scores
+            for key, value in eval_scores.items():
+                self.results[key] = float(value)
+
+        if use_ms_ssim:
+            self.calc_ms_ssim(reals.cuda(), fakes.cuda())
+
+    def precalc_inception_activations(self, reals, fakes, output_tensor,
+                                      inception_net):
+        dtype = tuple(self.tf.float32 for _ in output_tensor)
+
+        classifier_fn = functools.partial(self.tfgan.run_inception,
+                                          graph_def=inception_net,
+                                          input_tensor=self.tfgan.INCEPTION_INPUT,
+                                          output_tensor=output_tensor)
+
+        def call_classifier(elems):
+            return self.functional_ops.map_fn(fn=classifier_fn,
+                                              elems=elems,
+                                              dtype=dtype,
+                                              parallel_iterations=1,
+                                              back_prop=False,
+                                              swap_memory=True,
+                                              name='RunClassifier')
+
+        def compute_activations(images):
+            assert(type(images) == np.ndarray)
+            assert(len(images.shape) == 4)
+            assert(images.shape[1] == 3)
+            assert(np.min(images[0]) >= -1 and np.max(images[0]) <= 1)
+            images = self.tf.transpose(images, [0, 2, 3, 1])
+            size = self.tfgan.INCEPTION_DEFAULT_IMAGE_SIZE
+            images = self.tf.image.resize_bilinear(images, [size, size])
+            #  images = tfgan._validate_images(images, size)
+            num_splits = images.shape[0] // self.data.batch_size['test']
+            images_list = self.array_ops.split(images,
+                                               num_or_size_splits=num_splits)
+            imgs = self.array_ops.stack(images_list)
+            act = call_classifier(imgs)
+            if len(output_tensor) == 2:
+                final = self.array_ops.concat(self.array_ops.unstack(act[0]), 0)
+                logits = self.array_ops.concat(self.array_ops.unstack(act[1]), 0)
+            elif output_tensor[0] == self.tfgan.INCEPTION_FINAL_POOL:
+                final = self.array_ops.concat(self.array_ops.unstack(act[0]), 0)
+                logits = None
+            else:
+                final = None
+                logits = self.array_ops.concat(self.array_ops.unstack(act[0]), 0)
+            return final, logits
+
+        real_a = None
+        real_l = None
+        gen_a, gen_l = compute_activations(fakes.numpy())
+        if reals is not None:
+            real_a, real_l = compute_activations(reals.numpy())
+
+        return real_a, real_l, gen_a, gen_l
+
+    def calc_ms_ssim(self, reals, fakes):
+        # TODO Implement!!
+        raise NotImplementedError("Use perhaps existing cortex implementation?")
 
 
 class GAN(ModelPlugin):
@@ -336,6 +539,7 @@ class GAN(ModelPlugin):
         penalty_contract = dict(nets=dict(network='discriminator'))
         self.penalty = GradientPenalty(contract=penalty_contract)
         self.generator = Generator()
+        self.generator_eval = GeneratorEvaluator()
 
     def build(self, noise_type='normal', dim_z=64):
         """
@@ -358,30 +562,51 @@ class GAN(ModelPlugin):
             discriminator_updates: Number of discriminator updates per step.
 
         """
-
         for _ in range(discriminator_updates):
             self.data.next()
             inputs, Z = self.inputs('inputs', 'Z')
             generated = self.generator.generate(Z)
             self.discriminator.routine(inputs, generated.detach())
+            # TODO Hyperparameter to select where and how to combine gp
+            # TODO {'real_penalty': 0.5, 'fake_penalty': 0, 'roth_penalty': 0}
+            # TODO Write a method for that, instantiate as many GradientPenalty
+            # models as needed, and alias properly its routine inputs (use
+            # contract).
+            self.penalty.routine(auto_input=True)
             self.optimizer_step()
-            self.penalty.train_step()
+            self.losses.clear()
 
         for _ in range(generator_updates):
             self.generator.train_step()
 
-    def eval_step(self):
-        self.data.next()
+    def eval_step(self, eval_batch_size: int=4096):
+        """
+        Args:
+            eval_batch_size: Sample size to compute generator evaluation with.
+        """
+        rounds = eval_batch_size // self.data.batch_size['test']
+        reals = []
+        fakes = []
 
-        inputs, Z = self.inputs('inputs', 'Z')
-        generated = self.generator.generate(Z)
-        self.discriminator.routine(inputs, generated)
-        self.penalty.routine(auto_input=True)
-        self.generator.routine(auto_input=True)
+        for _ in range(rounds):
+            self.data.next()
+            inputs, Z = self.inputs('inputs', 'Z')
+            generated = self.generator.generate(Z)
+            self.generator.generated = generated
+            self.discriminator.routine(inputs, generated)
+            self.penalty.routine(auto_input=True)
+            self.generator.routine(auto_input=True)
+            reals.append(inputs.cpu())
+            fakes.append(generated.cpu())
+
+        reals = torch.cat(reals)
+        fakes = torch.cat(fakes)
+        self.generator_eval.routine(reals, fakes)
 
     def visualize(self, images, Z):
         self.add_image(images, name='ground truth')
         generated = self.generator.generate(Z)
+        self.generator.generated = generated
         self.discriminator.visualize(images, generated)
         self.generator.visualize(Z)
 
