@@ -3,48 +3,31 @@
 
 from torch import nn
 import torch.nn.functional as F
+from torch.nn.utils import spectral_norm
 import torch
 
 
-def l2normalize(v, esp=1e-8):
-    return v / (v.norm() + esp)
+def sn_weight(weight, u, height, n_power_iterations=1, eps=1e-12):
+    with torch.no_grad():
+        for _ in range(n_power_iterations):
+            v = F.normalize(torch.mv(weight.view(height, -1).t(), u),
+                            dim=0, eps=eps)
+            u = F.normalize(torch.mv(weight.view(height, -1), v),
+                            dim=0, eps=eps, out=u)
+        if n_power_iterations > 0:
+            u = u.clone()
 
-
-def sn_weight(weight, u, height, n_power_iterations):
-    weight.requires_grad_(False)
-    for _ in range(n_power_iterations):
-        v = l2normalize(torch.mv(weight.view(height, -1).t(), u))
-        u = l2normalize(torch.mv(weight.view(height, -1), v))
-
-    weight.requires_grad_(True)
     sigma = u.dot(weight.view(height, -1).mv(v))
     return torch.div(weight, sigma), u
 
 
-class SNConv2d(nn.Conv2d):
-    def __init__(self, *args, n_power_iterations=1, **kwargs):
-        super(SNConv2d, self).__init__(*args, **kwargs)
-        self.n_power_iterations = n_power_iterations
-        self.height = self.weight.shape[0]
-        self.register_buffer(
-            'u', l2normalize(self.weight.new_empty(self.height).normal_(0, 1)))
-
-    def forward(self, input):
-        w_sn, self.u = sn_weight(self.weight, self.u, self.height,
-                                 self.n_power_iterations)
-        return F.conv2d(input, w_sn, self.bias, self.stride,
-                        self.padding, self.dilation, self.groups)
+def SNConv2d(*args, **kwargs,
+             name='weight', n_power_iterations=1, eps=1e-12, dim=None):
+    return spectral_norm(nn.Conv2d(*args, **kwargs), name=name, eps=eps,
+                         n_power_iterations=n_power_iterations, dim=dim)
 
 
-class SNLinear(nn.Linear):
-    def __init__(self, *args, n_power_iterations=1, **kwargs):
-        super(SNLinear, self).__init__(*args, **kwargs)
-        self.n_power_iterations = n_power_iterations
-        self.height = self.weight.shape[0]
-        self.register_buffer(
-            'u', l2normalize(self.weight.new(self.height).normal_(0, 1)))
-
-    def forward(self, input):
-        w_sn, self.u = sn_weight(
-            self.weight, self.u, self.height, self.n_power_iterations)
-        return F.linear(input, w_sn, self.bias)
+def SNLinear(*args, **kwargs,
+             name='weight', n_power_iterations=1, eps=1e-12, dim=None):
+    return spectral_norm(nn.Linear(*args, **kwargs), name=name, eps=eps,
+                         n_power_iterations=n_power_iterations, dim=dim)
