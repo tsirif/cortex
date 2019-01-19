@@ -339,12 +339,18 @@ class TunablesHandler(Handler):
         if not key.startswith('_'):
             if key not in self._global_kwargs:
                 raise KeyError(self._get_error_string.format(key))
+            # Modify shared dictionary, so that changes take effect immediately
             self._global_kwargs[key] = value
+            # Modify experiment's state, so that changes are resumable
+            exp.ARGS['model'][key] = value
         super().__setitem__(key, value)
 
     def __setattr__(self, key, value):
         if not key.startswith('_'):
             if key not in self._global_kwargs:
                 raise KeyError(self._get_error_string.format(key))
+            # Modify shared dictionary, so that changes take effect immediately
             self._global_kwargs[key] = value
+            # Modify experiment's state, so that changes are resumable
+            exp.ARGS['model'][key] = value
         super().__setattr__(key, value)

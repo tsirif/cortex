@@ -15,7 +15,7 @@ import torch
 from torch import autograd
 import torch.nn.functional as F
 
-from .utils import (log_sum_exp, ms_ssim, update_decoder_args,
+from .utils import (log_sum_exp, update_decoder_args,
                     update_encoder_args, update_average_model)
 
 
@@ -392,9 +392,10 @@ class GeneratorEvaluator(ModelPlugin):
         self.math_ops = math_ops
         tfgan = tf.contrib.gan.eval
         self.tfgan = tfgan
+        self.inception_graph = None
 
     def routine(self, reals, fakes,
-                use_inception_score=True,
+                use_inception_score=False,
                 use_fid=False, use_kid=False, use_ms_ssim=False,
                 inception_tar_filename=_default_filename):
         """
@@ -417,7 +418,8 @@ class GeneratorEvaluator(ModelPlugin):
 
         if any((use_inception_score, use_fid, use_kid)):
             with self.tf.device(GeneratorEvaluator.pytorch_to_tf_device(DEVICE)):
-                inception_graph = self._get_inception_graph(inception_tar_filename)
+                if self.inception_graph is None:
+                    self.inception_graph = self._get_inception_graph(inception_tar_filename)
 
                 output_tensor = []
                 output_tensor += [self.tfgan.INCEPTION_FINAL_POOL] if use_fid or use_kid else []
@@ -425,7 +427,7 @@ class GeneratorEvaluator(ModelPlugin):
 
                 acts = self.precalc_inception_activations(reals_np if use_fid or use_kid else None,
                                                           fakes_np,
-                                                          output_tensor, inception_graph)
+                                                          output_tensor, self.inception_graph)
                 real_a, real_l, gen_a, gen_l = acts
 
                 if use_inception_score:
@@ -621,12 +623,12 @@ class GAN(ModelPlugin):
         for _ in range(generator_updates):
             self.generator.train_step()
 
-    def eval_step(self, eval_batch_size: int=64*78):
+    def eval_step(self, score_sample_size: int=64*78):
         """
         Args:
-            eval_batch_size: Sample size to compute generator evaluation with.
+            score_sample_size: Sample size to compute generator evaluation with.
         """
-        rounds = eval_batch_size // self.data.batch_size['test']
+        rounds = score_sample_size // self.data.batch_size['test']
         reals = []
         fakes = []
 
@@ -634,9 +636,9 @@ class GAN(ModelPlugin):
             self.data.next()
             inputs, Z = self.inputs('inputs', 'Z')
             generated = self.generator.generate(Z)
-            self.generator.generated = generated
             self.discriminator.routine(inputs, generated)
             self.penalty.routine(auto_input=True)
+            self.generator.generated = generated
             self.generator.routine(auto_input=True)
             reals.append(inputs.cpu())
             fakes.append(generated.cpu())
@@ -648,8 +650,8 @@ class GAN(ModelPlugin):
     def visualize(self, images, Z):
         self.add_image(images, name='ground truth')
         generated = self.generator.generate(Z)
-        self.generator.generated = generated
         self.discriminator.visualize(images, generated)
+        self.generator.generated = generated
         self.generator.visualize(Z)
 
 
