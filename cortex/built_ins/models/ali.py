@@ -126,9 +126,9 @@ class ALIDiscriminator(ModelPlugin):
         difference = E_pos - E_neg
 
         self.losses.discriminator = -difference
-        self.results.update(Scores=dict(Ep=P_samples.mean().item(),
-                                        Eq=Q_samples.mean().item()))
-        self.results['{} distance'.format(measure)] = difference.item()
+        self.results.update(Scores=dict(Ep=P_samples.mean(),
+                                        Eq=Q_samples.mean()))
+        self.results['{} distance'.format(measure)] = difference
 
     def score(self, X_P, X_Q, Z_P, Z_Q, measure):
         discriminator = self.nets.discriminator

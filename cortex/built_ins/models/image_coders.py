@@ -1,5 +1,5 @@
 from cortex.plugins import ModelPlugin
-from cortex.built_ins.models.utils import update_encoder_args, update_decoder_args, ms_ssim
+from cortex.built_ins.models.utils import update_encoder_args, update_decoder_args
 import torch.nn.functional as F
 
 
@@ -44,8 +44,8 @@ class ImageDecoder(ModelPlugin):
     def routine(self, inputs, Z, decoder_crit=F.mse_loss):
         X = self.decode(Z)
         self.losses.decoder = decoder_crit(X, inputs) / inputs.size(0)
-        msssim = ms_ssim(inputs, X)
-        self.results.ms_ssim = msssim.item()
+        #  msssim = ms_ssim(inputs, X) TODO  use GeneratorEvaluator instead
+        #  self.results.ms_ssim = msssim
 
     def decode(self, Z):
         return self.nets.decoder(Z)

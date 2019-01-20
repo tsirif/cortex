@@ -68,7 +68,7 @@ class AdversarialAutoencoder(ModelPlugin):
             Q_samples, measure, loss_type=encoder_loss_type)
 
         self.losses.encoder = self.losses.decoder + beta * adversarial_loss
-        self.results.adversarial_loss = adversarial_loss.item()
+        self.results.adversarial_loss = adversarial_loss
 
     def train_step(self, n_discriminator_updates=1):
         '''

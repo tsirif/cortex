@@ -300,6 +300,8 @@ class ModelPluginBase(metaclass=PluginType):
                         for k, v in model.help.items())
 
             # Complete self's kwargs with aggregated model's
+            # Component models' defaults and help does not overwrite parent
+            # model's ones, unless defaults are `None`
             for k, v in kwargs.items():
                 if k not in self._kwargs or self._kwargs[k] is None:
                     self._kwargs[k] = copy.deepcopy(v)
@@ -489,7 +491,14 @@ class ModelPluginBase(metaclass=PluginType):
 
             # Append results with a prefixed key to epoch results list
             for k, v in result_contributions.items():
-                self._all_results[k] = v
+                if isinstance(v, dict):  # TODO do for arbitrary nested stuff?
+                    v_ = dict((vk, vv.detach()) for vk, vv in v.items())
+                elif isinstance(v, (list, tuple)):
+                    v_ = type(v)(vv.detach() for vv in v)
+                else:
+                    v_ = v.detach()
+                self._all_results[k] = v_
+                result_contributions[k] = v_
             update_dict_of_lists(self._epoch_results, **self._results)
             self._results = prefixed(self._all_results, prefix=self.name)
 
@@ -500,7 +509,7 @@ class ModelPluginBase(metaclass=PluginType):
             # Append loss contributions with a prefixed key to epoch losses list
             losses = dict()
             for k, v in loss_contributions.items():  # k here is unaliased name
-                losses[k] = v.item()
+                losses[k] = v.detach()  # Losses are scalars only
                 self._all_losses[k] += v
             # unaliased name will be prefixed to show contribution
             update_dict_of_lists(self._epoch_losses, **losses)

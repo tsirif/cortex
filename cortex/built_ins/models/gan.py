@@ -224,9 +224,9 @@ class Discriminator(ModelPlugin):
         E_pos, E_neg, P_samples, Q_samples = self.score(X_P, X_Q, measure)
 
         difference = E_pos - E_neg
-        self.results.update(Scores=dict(Ep=P_samples.mean().item(),
-                                        Eq=Q_samples.mean().item()))
-        self.results['{} distance'.format(measure)] = difference.item()
+        self.results.update(Scores=dict(Ep=P_samples.mean(),
+                                        Eq=Q_samples.mean()))
+        self.results['{} distance'.format(measure)] = difference
         self.losses.discriminator = -difference
 
     def score(self, X_P, X_Q, measure):
@@ -400,11 +400,11 @@ class GeneratorEvaluator(ModelPlugin):
                 inception_tar_filename=_default_filename):
         """
             Args:
-                use_inception_score: True, to calculate inception score
-                use_fid: True, to calculcate Frechet inception distance
-                use_kid: True, to calculate kernel inception distance
-                use_ms_ssim: True, to calculate multi-scale structure similarity
-                inception_tar_filename: Contains the persistent path to frozen inception_v1
+                use_inception_score: True, to calculate inception score.
+                use_fid: True, to calculcate Frechet inception distance.
+                use_kid: True, to calculate kernel inception distance.
+                use_ms_ssim: True, to calculate multi-scale structure similarity.
+                inception_tar_filename: Contains the persistent path to frozen inception_v1.
 
         """
         # TODO Verify that this plugin works correctly!!!
@@ -452,7 +452,7 @@ class GeneratorEvaluator(ModelPlugin):
                     eval_scores['KID'] = kid_mean
                     # FIXME: This patches a bug in the calculation of KID's std by tfgan
                     # Remove when it is corrected
-                    kid_var = (self._num_of_kid_blocks * self.math_ops.square(kid_std))
+                    kid_var = self._num_of_kid_blocks * self.math_ops.square(kid_std)
                     eval_scores['KID_std'] = self.math_ops.sqrt(kid_var)
 
         if use_ms_ssim:

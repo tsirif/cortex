@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from cortex.built_ins.models.utils import ms_ssim
+#  from cortex.built_ins.models.utils import ms_ssim  TODO
 from cortex.built_ins.models.image_coders import ImageDecoder, ImageEncoder
 from cortex.plugins import ModelPlugin, register_plugin
 
@@ -134,10 +134,12 @@ class VAE(ModelPlugin):
         kl = (0.5 * (vae.std**2 + vae.mu**2 - 2. * torch.log(vae.std) -
                      1.).sum(1).mean())
 
-        msssim = ms_ssim(inputs, outputs)
+        #  msssim = ms_ssim(inputs, outputs)
 
         self.losses.vae = (r_loss + beta_kld * kl)
-        self.results.update(KL_divergence=kl.item(), ms_ssim=msssim.item())
+        #  self.results.update(KL_divergence=kl, ms_ssim=msssim)
+        self.results.update(KL_divergence=kl)
+
 
     def visualize(self, inputs, targets, Z):
         vae = self.nets.vae
