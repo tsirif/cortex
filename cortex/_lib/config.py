@@ -23,6 +23,7 @@ class ConfigHandler(Handler):
 
 _config_name = '.cortex.yml'
 DEFAULT_LOCATION = path.join(path.expanduser('~'), _config_name)
+CONFIG = ConfigHandler()
 
 
 def set_config():
@@ -31,6 +32,7 @@ def set_config():
     Reads from a configuration file. If file doesn't exist, it warns and returns.
 
     '''
+    global CONFIG
     config = ConfigHandler()
     config_file = DEFAULT_LOCATION
     isfile = path.isfile(config_file)
@@ -53,10 +55,8 @@ def set_config():
         config.update(viz=viz, data_paths=data_paths,
                       arch_paths=arch_paths, out_path=out_path)
 
-    return config
+    CONFIG = config
 
-
-CONFIG = set_config()
 
 _welcome_message = 'Welcome to cortex! Cortex is a library meant to inject ' \
                    'your PyTorch code into the training loop, automating ' \

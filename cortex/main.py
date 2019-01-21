@@ -29,6 +29,7 @@ def run(model=None):
             config.setup()
             exit(0)
 
+        config.set_config()
         print_section('EXPERIMENT')
         model, reload_nets, reload_optims = setup_experiment(args, model=model)
         print_section('DATA')

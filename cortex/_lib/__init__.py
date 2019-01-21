@@ -6,6 +6,7 @@ import copy
 import glob
 import logging
 import os
+import pathlib
 import pprint
 
 from . import config, exp, log_utils, models
@@ -143,6 +144,12 @@ def setup_experiment(args, model=None, testmode=False):
 
     update_nested_dicts(exp.ARGS['model'], model.kwargs)
     exp.ARGS['model'].update(**model.kwargs)
+
+    # Create local data directory, if not already there
+    # (it might be a temporary directory)
+    local_data_path = config.CONFIG.data_paths.get('local')
+    if exp.ARGS['data']['copy_to_local'] is True and local_data_path is not None:
+        pathlib.Path(local_data_path).mkdir(parents=True, exist_ok=True)
 
     for k, v in exp.ARGS.items():
         logger.info('Ultimate {} arguments: \n{}'

@@ -352,9 +352,9 @@ class GeneratorEvaluator(ModelPlugin):
         from cortex._lib.config import CONFIG
         default_filename = 'frozen_inception_v1.tar.gz'
         _local_path = CONFIG.data_paths.get('local')
-        if _local_path is not None:
+        if _local_path is not None and os.path.isdir(_local_path):
             return os.path.join(os.abspath(_local_path), default_filename)
-        return os.path.join('/tmp/cortex', default_filename)
+        return os.path.join(os.abspath(os.path.curdir), default_filename)
 
     @staticmethod
     def _get_tf_device():
@@ -370,18 +370,6 @@ class GeneratorEvaluator(ModelPlugin):
         else:
             raise ValueError("Unknown pytorch to tensorflow device conversion.")
         return tf_device_str
-
-    def __init__(self):
-        super().__init__()
-
-        self.tf = None
-        self.array_ops = None
-        self.functional_ops = None
-        self.math_ops = None
-        self.tfgan = None
-        self.default_inception_path = None
-        self.tf_device_name = None
-        self.inception_graph = None
 
     def _get_inception_graph(self, tar_filename):
         """Fetch inception graph tarball in a persistent `tarball_location`."""
