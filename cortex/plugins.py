@@ -305,7 +305,7 @@ class ModelPlugin(ModelPluginBase):
             if optimizer is not None:
                 optimizer.step()
 
-    def train_loop(self, validate_batches=0):
+    def train_loop(self, validate_batches=0, autotune_on=False):
         """The training loop.
 
         This can be overridden to change the behavior of the training loop.
@@ -329,7 +329,8 @@ class ModelPlugin(ModelPluginBase):
                 self._reset_epoch()
                 update_nested_dict(self._all_validation, **validation)
 
-                self.autotune()
+                if autotune_on is True:
+                    self.autotune()
 
             while True:
                 self.train_step()

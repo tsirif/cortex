@@ -18,9 +18,10 @@ logger = logging.getLogger('cortex.train')
 
 
 def train_epoch(model, epoch, full_eval_during_train, validate_batches=0,
+                autotune_on=False,
                 data_mode='train', use_pbar=True):
     model.train_loop(epoch, data_mode=data_mode, use_pbar=use_pbar,
-                     validate_batches=0)
+                     validate_batches=validate_batches, autotune_on=autotune_on)
 
     if full_eval_during_train:
         return eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar)
@@ -204,7 +205,7 @@ def save_best(model, train_results, best, save_on_best, save_on_lowest):
         return best
 
 
-def main_loop(model, epochs=500, validate_batches=0,
+def main_loop(model, epochs=500, validate_batches=0, autotune_on=False,
               archive_every=10, test_every=1, test_seed=None,
               save_on_best=None, save_on_lowest=None, save_on_highest=None,
               full_eval_during_train=False,
@@ -216,6 +217,7 @@ def main_loop(model, epochs=500, validate_batches=0,
         epochs: Number of epochs.
         validate_batches: How many batches to be used in each epoch to validate
             the model in the beginning of its training loop.
+        autotune_on: If True, it will try to autotune hyperparameters.
         archive_every: Period of epochs for writing checkpoints.
         test_every: Period of epochs for performing tests and
             expensive visualizations.
@@ -265,7 +267,7 @@ def main_loop(model, epochs=500, validate_batches=0,
             # TRAINING
             train_results_ = train_epoch(
                 model, epoch, full_eval_during_train,
-                validate_batches=validate_batches,
+                validate_batches=validate_batches, autotune_on=autotune_on,
                 data_mode=train_mode, use_pbar=not(pbar_off))
             convert_to_numpy(train_results_)
 

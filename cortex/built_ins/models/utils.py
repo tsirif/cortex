@@ -42,7 +42,7 @@ def perform_svc(X, Y, clf=None):
     return clf, Y_hat
 
 
-resnet_encoder_args_ = dict(dim_h=64, dim_h_max=512, batch_norm=True,
+resnet_encoder_args_ = dict(dim_h=64, dim_h_max=1024, batch_norm=True,
                             f_size=3, n_steps=3)
 mnist_encoder_args_ = dict(dim_h=64, batch_norm=True, f_size=5,
                            pad=2, stride=2, min_dim=7)
@@ -105,7 +105,7 @@ def update_encoder_args(x_shape, model_type='convnet', encoder_args=None):
     return Encoder, encoder_args_
 
 
-resnet_decoder_args_ = dict(dim_h=64, dim_h_max=512, batch_norm=True,
+resnet_decoder_args_ = dict(dim_h=64, dim_h_max=1024, batch_norm=True,
                             f_size=3, n_steps=3)
 mnist_decoder_args_ = dict(dim_h=64, batch_norm=True, f_size=4,
                            pad=1, stride=2, n_steps=2)
