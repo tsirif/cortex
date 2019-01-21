@@ -38,9 +38,9 @@ def set_config():
     isfile = path.isfile(config_file)
 
     if not isfile:
-        logger.warning(str(config_file) + ' not found.\n'
-                       'Run ``cortex setup`` or create a user-wide config file.')
-        return config
+        logger.error(str(config_file) + ' not found.\n'
+                     'Run ``cortex setup`` or create a user-wide config file.')
+        exit(1)
 
     logger.debug('Open config file {}'.format(config_file))
     with open(config_file, 'r') as f:
