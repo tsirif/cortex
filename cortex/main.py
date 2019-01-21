@@ -37,7 +37,7 @@ def run(model=None):
         model.reload_nets(reload_nets)
         model.build()
         print_section('OPTIMIZER')
-        optimizer.setup(model, reload_states=reload_optims,
+        optimizer.setup(model, reload_optims,
                         **exp.ARGS['optimizer'])
 
     except KeyboardInterrupt:

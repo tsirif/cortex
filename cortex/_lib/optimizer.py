@@ -73,9 +73,9 @@ def wrap_optimizer(C):
     return Op
 
 
-def setup(model, optimizer='Adam', learning_rate=1.e-4,
+def setup(model, reload_states, optimizer='Adam', learning_rate=1.e-4,
           weight_decay={}, clipping={}, optimizer_options={},
-          model_optimizer_options={}, reload_states=None):
+          model_optimizer_options={}):
     '''Optimizer entrypoint.
 
     Args:
