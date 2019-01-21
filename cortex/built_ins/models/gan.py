@@ -6,8 +6,6 @@ import os
 import functools
 import math
 
-from cortex._lib.config import CONFIG
-from cortex._lib.exp import DEVICE
 from cortex.built_ins.networks.fully_connected import FullyConnectedNet
 from cortex.plugins import register_plugin, ModelPlugin
 import numpy as np
@@ -346,22 +344,22 @@ class Generator(ModelPlugin):
 
 class GeneratorEvaluator(ModelPlugin):
     """A module for testing a generator model."""
+    _num_of_kid_blocks = 8
 
     @staticmethod
     def _default_inception_tar_filename():
+        from cortex._lib.config import CONFIG
         default_filename = 'frozen_inception_v1.tar.gz'
         _local_path = CONFIG.data_paths.get('local')
         if _local_path is not None:
             return os.path.join(os.abspath(_local_path), default_filename)
         return os.path.join('/tmp/cortex', default_filename)
 
-    _default_filename = _default_inception_tar_filename()
-    _num_of_kid_blocks = 8
-
     @staticmethod
-    def pytorch_to_tf_device(device):
+    def _get_tf_device():
+        from cortex._lib.exp import DEVICE
         try:
-            device_id, device_num = str(device).split(':')
+            device_id, device_num = str(DEVICE).split(':')
         except ValueError:
             device_id == 'cpu'
         if device_id == 'cpu':
@@ -371,14 +369,6 @@ class GeneratorEvaluator(ModelPlugin):
         else:
             raise ValueError("Unknown pytorch to tensorflow device conversion.")
         return tf_device_str
-
-    @classmethod
-    def _get_inception_graph(cls, tar_filename):
-        """Fetch inception graph tarball in a persistent `tarball_location`."""
-        import tensorflow.contrib.gan.eval as tfgan
-        return tfgan.get_graph_def_from_url_tarball(
-            tfgan.INCEPTION_URL, tfgan.INCEPTION_FROZEN_GRAPH,
-            os.path.abspath(tar_filename))
 
     def __init__(self):
         super().__init__()
@@ -390,26 +380,45 @@ class GeneratorEvaluator(ModelPlugin):
         self.functional_ops = functional_ops
         from tensorflow.python.ops import math_ops
         self.math_ops = math_ops
-        tfgan = tf.contrib.gan.eval
-        self.tfgan = tfgan
+        self.tfgan = tf.contrib.gan.eval
+
+        self.default_inception_path = self._default_inception_tar_filename()
+        self.tf_device_name = self._get_tf_device()
         self.inception_graph = None
+
+    def _get_inception_graph(self, tar_filename):
+        """Fetch inception graph tarball in a persistent `tarball_location`."""
+        return self.tfgan.get_graph_def_from_url_tarball(
+            self.tfgan.INCEPTION_URL, self.tfgan.INCEPTION_FROZEN_GRAPH,
+            os.path.abspath(tar_filename))
+
+    def build(self, inception_path=None):
+        """
+            Args:
+                inception_path: Contains the persistent path to frozen inception_v1.
+
+        """
+        inception_path = inception_path or self.default_inception_path
+        with self.tf.device(self.tf_device_name):
+            self.inception_graph = self._get_inception_graph(inception_path)
 
     def routine(self, reals, fakes,
                 use_inception_score=False,
-                use_fid=False, use_kid=False, use_ms_ssim=False,
-                inception_tar_filename=_default_filename):
+                use_fid=False, use_kid=False, use_ms_ssim=False):
         """
             Args:
                 use_inception_score: True, to calculate inception score.
                 use_fid: True, to calculcate Frechet inception distance.
                 use_kid: True, to calculate kernel inception distance.
                 use_ms_ssim: True, to calculate multi-scale structure similarity.
-                inception_tar_filename: Contains the persistent path to frozen inception_v1.
 
         """
         # TODO Verify that this plugin works correctly!!!
         # NOTE: `reals` should not have any meaningful sorting in order to
         #       calculate a correct estimation of Kernel Inception Distance.
+        if not any((use_inception_score, use_fid, use_kid, use_ms_ssim)):
+            return
+
         eval_scores = {}
         reals_len = reals.size()[0]
         fakes_len = fakes.size()[0]
@@ -417,10 +426,7 @@ class GeneratorEvaluator(ModelPlugin):
         fakes_np = fakes.numpy()
 
         if any((use_inception_score, use_fid, use_kid)):
-            with self.tf.device(GeneratorEvaluator.pytorch_to_tf_device(DEVICE)):
-                if self.inception_graph is None:
-                    self.inception_graph = self._get_inception_graph(inception_tar_filename)
-
+            with self.tf.device(self.tf_device_name):
                 output_tensor = []
                 output_tensor += [self.tfgan.INCEPTION_FINAL_POOL] if use_fid or use_kid else []
                 output_tensor += [self.tfgan.INCEPTION_OUTPUT] if use_inception_score else []
@@ -457,7 +463,7 @@ class GeneratorEvaluator(ModelPlugin):
 
         if use_ms_ssim:
             assert(reals_len == fakes_len)
-            with self.tf.device(GeneratorEvaluator.pytorch_to_tf_device(DEVICE)):
+            with self.tf.device(self.tf_device_name):
                 ms_ssims = self.calc_ms_ssim(fakes_np, reals_np)
                 assert(self.array_ops.rank(ms_ssims) == 1)  # XXX
                 assert(self.array_ops.shape(ms_ssims)[0] == reals_len)
@@ -595,8 +601,9 @@ class GAN(ModelPlugin):
         self.add_noise('Z', dist=noise_type, size=dim_z)
         self.add_noise('E', dist='uniform', size=1)
 
-        self.generator.build()
         self.discriminator.build()
+        self.generator.build()
+        self.generator_eval.build()
 
     def train_step(self, generator_updates=1, discriminator_updates=1):
         """
