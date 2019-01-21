@@ -373,18 +373,14 @@ class GeneratorEvaluator(ModelPlugin):
 
     def __init__(self):
         super().__init__()
-        import tensorflow as tf
-        self.tf = tf
-        from tensorflow.python.ops import array_ops
-        self.array_ops = array_ops
-        from tensorflow.python.ops import functional_ops
-        self.functional_ops = functional_ops
-        from tensorflow.python.ops import math_ops
-        self.math_ops = math_ops
-        self.tfgan = tf.contrib.gan.eval
 
-        self.default_inception_path = self._default_inception_tar_filename()
-        self.tf_device_name = self._get_tf_device()
+        self.tf = None
+        self.array_ops = None
+        self.functional_ops = None
+        self.math_ops = None
+        self.tfgan = None
+        self.default_inception_path = None
+        self.tf_device_name = None
         self.inception_graph = None
 
     def _get_inception_graph(self, tar_filename):
@@ -399,7 +395,18 @@ class GeneratorEvaluator(ModelPlugin):
                 inception_path: Contains the persistent path to frozen inception_v1.
 
         """
-        inception_path = inception_path or self.default_inception_path
+        import tensorflow as tf
+        self.tf = tf
+        from tensorflow.python.ops import array_ops
+        self.array_ops = array_ops
+        from tensorflow.python.ops import functional_ops
+        self.functional_ops = functional_ops
+        from tensorflow.python.ops import math_ops
+        self.math_ops = math_ops
+        self.tfgan = tf.contrib.gan.eval
+
+        self.tf_device_name = self._get_tf_device()
+        inception_path = inception_path or self._default_inception_tar_filename()
         with self.tf.device(self.tf_device_name):
             self.inception_graph = self._get_inception_graph(inception_path)
 
