@@ -345,6 +345,7 @@ class Generator(ModelPlugin):
 class GeneratorEvaluator(ModelPlugin):
     """A module for testing a generator model."""
     _num_of_kid_blocks = 8
+    _inception_v1_batch_size = 32
 
     @staticmethod
     def _default_inception_tar_filename():
@@ -422,6 +423,7 @@ class GeneratorEvaluator(ModelPlugin):
         eval_scores = {}
         reals_len = reals.size()[0]
         fakes_len = fakes.size()[0]
+        assert(reals_len == fakes_len)
         reals_np = reals.numpy()
         fakes_np = fakes.numpy()
 
@@ -462,7 +464,6 @@ class GeneratorEvaluator(ModelPlugin):
                     eval_scores['KID_std'] = self.math_ops.sqrt(kid_var)
 
         if use_ms_ssim:
-            assert(reals_len == fakes_len)
             with self.tf.device(self.tf_device_name):
                 ms_ssims = self.calc_ms_ssim(fakes_np, reals_np)
                 assert(self.array_ops.rank(ms_ssims) == 1)  # XXX
@@ -511,7 +512,7 @@ class GeneratorEvaluator(ModelPlugin):
             size = self.tfgan.INCEPTION_DEFAULT_IMAGE_SIZE
             images = self.tf.image.resize_bilinear(images, [size, size])
             # Calculate number of batches for computation efficiency
-            num_batches = images.shape[0] // self.data.batch_size['test']
+            num_batches = images.shape[0] // self._inception_v1_batch_size
             images_list = self.array_ops.split(images,
                                                num_or_size_splits=num_batches)
             imgs = self.array_ops.stack(images_list)
@@ -550,7 +551,7 @@ class GeneratorEvaluator(ModelPlugin):
         fakes = self.tf.transpose(fakes, [0, 2, 3, 1])
         reals = self.tf.transpose(reals, [0, 2, 3, 1])
         # Calculate number of batches for computation efficiency
-        num_batches = fakes.shape[0] // self.data.batch_size['test']
+        num_batches = fakes.shape[0] // self._inception_v1_batch_size
         fakes_list = self.array_ops.split(fakes,
                                           num_or_size_splits=num_batches)
         fake_imgs = self.array_ops.stack(fakes_list)
@@ -630,29 +631,37 @@ class GAN(ModelPlugin):
         for _ in range(generator_updates):
             self.generator.train_step()
 
-    def eval_step(self, score_sample_size: int=64*78):
+    def eval_step(self, score_sample_size: int=128*39):
         """
         Args:
             score_sample_size: Sample size to compute generator evaluation with.
+
         """
-        rounds = score_sample_size // self.data.batch_size['test']
+        batch_size = self.data.batch_size['train'] if self._train else self.data.batch_size['test']
+        rounds = score_sample_size // batch_size
         reals = []
         fakes = []
 
-        for _ in range(rounds):
-            self.data.next()
-            inputs, Z = self.inputs('inputs', 'Z')
-            generated = self.generator.generate(Z)
-            self.discriminator.routine(inputs, generated)
-            self.penalty.routine(auto_input=True)
-            self.generator.generated = generated
-            self.generator.routine(auto_input=True)
-            reals.append(inputs.cpu())
-            fakes.append(generated.cpu())
+        try:
+            for _i in range(rounds):
+                self.data.next()
+                inputs, Z = self.inputs('inputs', 'Z')
+                generated = self.generator.generate(Z)
+                self.discriminator.routine(inputs, generated)
+                self.penalty.routine(auto_input=True)
+                self.generator.generated = generated
+                self.generator.routine(auto_input=True)
+                reals.append(inputs.detach().cpu())
+                fakes.append(generated.detach().cpu())
 
-        reals = torch.cat(reals)
-        fakes = torch.cat(fakes)
-        self.generator_eval.routine(reals, fakes)
+        finally:
+            # Calculate generator evaluation scores on "same" sample sizes
+            # If `StopIteration` has been raised before all rounds have been
+            # completed don't use the accumulated "reals" and "fakes"
+            if _i == rounds - 1:
+                reals = torch.cat(reals)
+                fakes = torch.cat(fakes)
+                self.generator_eval.routine(reals, fakes)
 
     def visualize(self, images, Z):
         self.add_image(images, name='ground truth')
