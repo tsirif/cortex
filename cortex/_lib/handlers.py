@@ -19,7 +19,7 @@ class Handler(MutableMapping):
     def __init__(self, allow_overwrite=True, **kwargs):
         self._allow_overwrite = allow_overwrite
         self._locked = False
-        self._storage = dict(**kwargs)
+        self.__dict__.update(**kwargs)
 
     def _check_keyvalue(self, key, value):
         if self._type and not isinstance(value, self._type):

@@ -154,5 +154,6 @@ def setup_experiment(args, model=None, testmode=False):
     for k, v in exp.ARGS.items():
         logger.info('Ultimate {} arguments: \n{}'
                     .format(k, pprint.pformat(v)))
+    logger.info('Experiment info: \n{}'.format(pprint.pformat(exp.INFO)))
 
     return model, reload_nets, reload_optims
