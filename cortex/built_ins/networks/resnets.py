@@ -203,7 +203,7 @@ class ResDecoder(nn.Module):
         super(ResDecoder, self).__init__()
         models = nn.Sequential()
 
-        logger.debug('Output shape: {}'.format(shape))
+        logger.debug('Building ResDecoder. Output shape: {}'.format(shape))
         dim_x_, dim_y_, dim_out_ = shape
         dim_h_ = dim_h
 
@@ -231,7 +231,7 @@ class ResDecoder(nn.Module):
             dim_in = dim_out
             dim_out //= div
             name = 'resblock_({}/{}_{:s})_{}'.format(dim_in, dim_out,
-                                                     resample, i + 1)
+                                                     str(resample), i + 1)
             resblock = ResBlock(dim_in, dim_out, dim_x, dim_y, f_size,
                                 resample=resample, name=name,
                                 nonlinearity=nonlinearity, **layer_args)
@@ -276,7 +276,7 @@ class ResEncoder(BaseNet):
         if isinstance(fully_connected_layers, int):
             fully_connected_layers = [fully_connected_layers]
 
-        logger.debug('Input shape: {}'.format(shape))
+        logger.debug('Building ResEncoder. Input shape: {}'.format(shape))
         dim_x_, dim_y_, dim_in_ = shape
         dim_h_ = dim_h
         dim_out_ = dim_out
@@ -298,7 +298,7 @@ class ResEncoder(BaseNet):
             dim_in = dim_out
             dim_out *= mul
             name = 'resblock_({}/{}_{:s})_{}'.format(dim_in, dim_out,
-                                                     resample, i + 1)
+                                                     str(resample), i + 1)
             resblock = ResBlock(dim_in, dim_out, dim_x_, dim_y_, f_size,
                                 resample=resample, name=name,
                                 nonlinearity=nonlinearity,

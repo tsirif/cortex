@@ -2,6 +2,7 @@
 
 '''
 
+import copy
 import os
 import functools
 import math
@@ -293,7 +294,7 @@ class Generator(ModelPlugin):
         awm = average_weight_model
         assert(awm >= 0 and 1 > awm)
         if awm > 0:
-            self.nets.test_generator = generator.clone()
+            self.nets.test_generator = copy.deepcopy(generator)
         else:
             self.nets.test_generator = generator
 
@@ -353,8 +354,8 @@ class GeneratorEvaluator(ModelPlugin):
         default_filename = 'frozen_inception_v1.tar.gz'
         _local_path = CONFIG.data_paths.get('local')
         if _local_path is not None and os.path.isdir(_local_path):
-            return os.path.join(os.abspath(_local_path), default_filename)
-        return os.path.join(os.abspath(os.path.curdir), default_filename)
+            return os.path.join(os.path.abspath(_local_path), default_filename)
+        return os.path.join(os.path.abspath(os.path.curdir), default_filename)
 
     @staticmethod
     def _get_tf_device():
@@ -362,7 +363,7 @@ class GeneratorEvaluator(ModelPlugin):
         try:
             device_id, device_num = str(DEVICE).split(':')
         except ValueError:
-            device_id == 'cpu'
+            device_id = 'cpu'
         if device_id == 'cpu':
             tf_device_str = "/cpu:0"
         elif device_id == 'cuda':
@@ -391,7 +392,7 @@ class GeneratorEvaluator(ModelPlugin):
         self.functional_ops = functional_ops
         from tensorflow.python.ops import math_ops
         self.math_ops = math_ops
-        self.tfgan = tf.contrib.gan.eval
+        self.tfgan = tf.contrib.gan.eval.classifier_metrics
 
         self.tf_device_name = self._get_tf_device()
         inception_path = inception_path or self._default_inception_tar_filename()

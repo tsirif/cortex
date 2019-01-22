@@ -21,13 +21,13 @@ def sn_weight(weight, u, height, n_power_iterations=1, eps=1e-12):
     return torch.div(weight, sigma), u
 
 
-def SNConv2d(*args, **kwargs,
-             name='weight', n_power_iterations=1, eps=1e-12, dim=None):
+def SNConv2d(*args, name='weight', n_power_iterations=1, eps=1e-12, dim=None,
+             **kwargs):
     return spectral_norm(nn.Conv2d(*args, **kwargs), name=name, eps=eps,
                          n_power_iterations=n_power_iterations, dim=dim)
 
 
-def SNLinear(*args, **kwargs,
-             name='weight', n_power_iterations=1, eps=1e-12, dim=None):
+def SNLinear(*args, name='weight', n_power_iterations=1, eps=1e-12, dim=None,
+             **kwargs):
     return spectral_norm(nn.Linear(*args, **kwargs), name=name, eps=eps,
                          n_power_iterations=n_power_iterations, dim=dim)
