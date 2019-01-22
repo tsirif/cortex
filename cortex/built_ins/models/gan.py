@@ -19,7 +19,7 @@ from .utils import (log_sum_exp, update_decoder_args,
                     update_encoder_args, update_average_model)
 
 
-logger = logging.getLogger('cortex.arch' + __name__)
+logger = logging.getLogger(__name__)
 
 
 def raise_measure_error(measure):
@@ -301,6 +301,9 @@ class Generator(ModelPlugin):
             self.nets.test_generator = copy.deepcopy(generator)
         else:
             self.nets.test_generator = generator
+
+        # First `self.generate(Z)` necessarily will generate something
+        self._use_generated = None
 
     def train_step(self, average_weight_model: float=0):
         super().train_step()

@@ -17,7 +17,7 @@ from .gan import apply_penalty, f_divergence
 from .modules.conv_decoders import MNISTDeConv as Generator
 from .modules.convnets import MNISTConv as Discriminator
 
-logger = logging.getLogger('cortex.models' + __name__)
+logger = logging.getLogger(__name__)
 
 GLOBALS = {'DIM_X': None, 'DIM_Y': None, 'DIM_C': None, 'DIM_L': None, 'DIM_Z': None}
 

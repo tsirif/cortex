@@ -11,7 +11,7 @@ from .base_network import BaseNet
 from .utils import finish_layer_2d
 
 
-logger = logging.getLogger('cortex.models' + __name__)
+logger = logging.getLogger(__name__)
 
 
 def infer_conv_size(w, k, s, p):

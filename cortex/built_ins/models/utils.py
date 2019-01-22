@@ -9,7 +9,7 @@ from sklearn import svm
 import torch
 
 
-logger = logging.getLogger('cortex.arch' + __name__)
+logger = logging.getLogger(__name__)
 
 
 def log_sum_exp(x, axis=None):

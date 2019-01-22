@@ -9,7 +9,7 @@ import torch.nn as nn
 from .base_network import BaseNet
 
 
-logger = logging.getLogger('cortex.arch' + __name__)
+logger = logging.getLogger(__name__)
 
 
 class FullyConnectedNet(BaseNet):

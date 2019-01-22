@@ -6,7 +6,7 @@ import logging
 
 from torch import nn
 
-logger = logging.getLogger('cortex.arch.modules' + __name__)
+logger = logging.getLogger(__name__)
 
 
 # TODO Expose hyperparameters of non-linearities later

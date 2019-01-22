@@ -13,7 +13,7 @@ from .utils import (apply_nonlinearity,
 from .SpectralNormLayer import SNConv2d, SNLinear
 
 
-logger = logging.getLogger('cortex.models' + __name__)
+logger = logging.getLogger(__name__)
 
 
 def calc_decoder_rounds(n, u, h):
