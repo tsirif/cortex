@@ -5,6 +5,7 @@
 import copy
 import os
 import functools
+import logging
 import math
 
 from cortex.built_ins.networks.fully_connected import FullyConnectedNet
@@ -16,6 +17,9 @@ import torch.nn.functional as F
 
 from .utils import (log_sum_exp, update_decoder_args,
                     update_encoder_args, update_average_model)
+
+
+logger = logging.getLogger('cortex.arch' + __name__)
 
 
 def raise_measure_error(measure):
@@ -402,6 +406,7 @@ class GeneratorEvaluator(ModelPlugin):
 
         self.tf_device_name = self._get_tf_device()
         inception_path = inception_path or self._default_inception_tar_filename()
+        logger.info("GeneratorEvaluator. inception_v1 path: {}".format(inception_path))
         with self.tf.device(self.tf_device_name):
             self.inception_graph = self._get_inception_graph(inception_path)
 
