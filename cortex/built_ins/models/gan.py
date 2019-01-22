@@ -392,7 +392,7 @@ class GeneratorEvaluator(ModelPlugin):
         self.functional_ops = functional_ops
         from tensorflow.python.ops import math_ops
         self.math_ops = math_ops
-        self.tfgan = tf.contrib.gan.eval.classifier_metrics
+        self.tfgan = tf.contrib.gan.python.eval.python.classifier_metrics_impl
 
         self.tf_device_name = self._get_tf_device()
         inception_path = inception_path or self._default_inception_tar_filename()
