@@ -347,6 +347,12 @@ class GeneratorEvaluator(ModelPlugin):
     """A module for testing a generator model."""
     _num_of_kid_blocks = 8
     _inception_v1_batch_size = 32
+    INCEPTION_URL = 'http://download.tensorflow.org/models/frozen_inception_v1_2015_12_05.tar.gz'
+    INCEPTION_FROZEN_GRAPH = 'inceptionv1_for_inception_score.pb'
+    INCEPTION_INPUT = 'Mul:0'
+    INCEPTION_OUTPUT = 'logits:0'
+    INCEPTION_FINAL_POOL = 'pool_3:0'
+    INCEPTION_DEFAULT_IMAGE_SIZE = 299
 
     @staticmethod
     def _default_inception_tar_filename():
@@ -375,7 +381,7 @@ class GeneratorEvaluator(ModelPlugin):
     def _get_inception_graph(self, tar_filename):
         """Fetch inception graph tarball in a persistent `tarball_location`."""
         return self.tfgan.get_graph_def_from_url_tarball(
-            self.tfgan.INCEPTION_URL, self.tfgan.INCEPTION_FROZEN_GRAPH,
+            self.INCEPTION_URL, self.INCEPTION_FROZEN_GRAPH,
             os.path.abspath(tar_filename))
 
     def build(self, inception_path=None):
@@ -392,7 +398,7 @@ class GeneratorEvaluator(ModelPlugin):
         self.functional_ops = functional_ops
         from tensorflow.python.ops import math_ops
         self.math_ops = math_ops
-        self.tfgan = tf.contrib.gan.python.eval.python.classifier_metrics_impl
+        self.tfgan = tf.contrib.gan.eval
 
         self.tf_device_name = self._get_tf_device()
         inception_path = inception_path or self._default_inception_tar_filename()
@@ -426,8 +432,8 @@ class GeneratorEvaluator(ModelPlugin):
         if any((use_inception_score, use_fid, use_kid)):
             with self.tf.device(self.tf_device_name):
                 output_tensor = []
-                output_tensor += [self.tfgan.INCEPTION_FINAL_POOL] if use_fid or use_kid else []
-                output_tensor += [self.tfgan.INCEPTION_OUTPUT] if use_inception_score else []
+                output_tensor += [self.INCEPTION_FINAL_POOL] if use_fid or use_kid else []
+                output_tensor += [self.INCEPTION_OUTPUT] if use_inception_score else []
 
                 acts = self.precalc_inception_activations(reals_np if use_fid or use_kid else None,
                                                           fakes_np,
@@ -440,9 +446,8 @@ class GeneratorEvaluator(ModelPlugin):
                     eval_scores['IS'] = score
 
                 if use_fid:
-                    # Use O(n) estimation of FID (diagonal only calc of covariances)
                     # TODO perhaps use a hyperparameter to select available variant
-                    fid_fn = self.tfgan.diagonal_only_frechet_classifier_distance_from_activations
+                    fid_fn = self.tfgan.frechet_classifier_distance_from_activations
                     fid = fid_fn(real_a, gen_a)
                     eval_scores['FID'] = fid
 
@@ -485,7 +490,7 @@ class GeneratorEvaluator(ModelPlugin):
 
         classifier_fn = functools.partial(self.tfgan.run_inception,
                                           graph_def=inception_net,
-                                          input_tensor=self.tfgan.INCEPTION_INPUT,
+                                          input_tensor=self.INCEPTION_INPUT,
                                           output_tensor=output_tensor)
 
         def call_classifier(elems):
@@ -505,7 +510,7 @@ class GeneratorEvaluator(ModelPlugin):
             # Permute ranks so that "channel" is the last one
             images = self.tf.transpose(images, [0, 2, 3, 1])
             # Resize to inception's input size
-            size = self.tfgan.INCEPTION_DEFAULT_IMAGE_SIZE
+            size = self.INCEPTION_DEFAULT_IMAGE_SIZE
             images = self.tf.image.resize_bilinear(images, [size, size])
             # Calculate number of batches for computation efficiency
             num_batches = images.shape[0] // self._inception_v1_batch_size
@@ -518,7 +523,7 @@ class GeneratorEvaluator(ModelPlugin):
             if len(output_tensor) == 2:
                 final = self.array_ops.concat(self.array_ops.unstack(act[0]), 0)
                 logits = self.array_ops.concat(self.array_ops.unstack(act[1]), 0)
-            elif output_tensor[0] == self.tfgan.INCEPTION_FINAL_POOL:
+            elif output_tensor[0] == self.INCEPTION_FINAL_POOL:
                 final = self.array_ops.concat(self.array_ops.unstack(act[0]), 0)
                 logits = None
             else:
