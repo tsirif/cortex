@@ -297,6 +297,9 @@ class ModelPlugin(ModelPluginBase):
         This can be overridden to change the behavior of the optimizer.
 
         """
+        if self._train is False:
+            return
+
         keys = self._all_losses.keys()
 
         for i, k in enumerate(keys):
