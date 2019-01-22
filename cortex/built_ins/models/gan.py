@@ -141,7 +141,7 @@ class GradientPenalty(ModelPlugin):
             raise NotImplementedError(penalty_type)
 
         if penalty:
-            self.losses.network = penalty
+            self.losses.network += penalty
 
     @staticmethod
     def _get_gradient(inp, output):
@@ -541,9 +541,9 @@ class GeneratorEvaluator(ModelPlugin):
 
         real_a = None
         real_l = None
-        gen_a, gen_l = compute_activations(fakes.numpy())
+        gen_a, gen_l = compute_activations(fakes)
         if reals is not None:
-            real_a, real_l = compute_activations(reals.numpy())
+            real_a, real_l = compute_activations(reals)
 
         return real_a, real_l, gen_a, gen_l
 
