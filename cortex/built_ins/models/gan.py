@@ -141,7 +141,7 @@ class GradientPenalty(ModelPlugin):
             raise NotImplementedError(penalty_type)
 
         if penalty:
-            self.losses.network += penalty
+            self.losses.network = penalty
 
     @staticmethod
     def _get_gradient(inp, output):
@@ -165,8 +165,8 @@ class GradientPenalty(ModelPlugin):
         with torch.set_grad_enabled(True):
             output = network(*input)
         gradient = self._get_gradient(input, output)
-        gradient = gradient.view(gradient.size()[0], -1)
-        penalty = (gradient ** 2).sum(1).mean()
+        gradient = gradient.view(gradient.size(0), -1)
+        penalty = gradient.pow(2).sum(-1).mean()
 
         return penalty_amount * penalty
 
@@ -329,7 +329,7 @@ class Generator(ModelPlugin):
 
     def generate(self, Z):
         _generated = self.generated
-        if self._train:
+        if self.is_training:
             generator = self.nets.generator
         else:
             generator = self.nets.test_generator
@@ -352,8 +352,6 @@ class Generator(ModelPlugin):
 
 class GeneratorEvaluator(ModelPlugin):
     """A module for testing a generator model."""
-    _num_of_kid_blocks = 8
-    _inception_v1_batch_size = 32
     INCEPTION_URL = 'http://download.tensorflow.org/models/frozen_inception_v1_2015_12_05.tar.gz'
     INCEPTION_FROZEN_GRAPH = 'inceptionv1_for_inception_score.pb'
     INCEPTION_INPUT = 'Mul:0'
@@ -397,6 +395,7 @@ class GeneratorEvaluator(ModelPlugin):
                 inception_path: Contains the persistent path to frozen inception_v1.
 
         """
+        logger.info("GeneratorEvaluator. importing tensorflow...")
         import tensorflow as tf
         self.tf = tf
         from tensorflow.python.ops import array_ops
@@ -415,13 +414,20 @@ class GeneratorEvaluator(ModelPlugin):
 
     def routine(self, reals, fakes,
                 use_inception_score=False,
-                use_fid=False, use_kid=False, use_ms_ssim=False):
+                use_fid=False,
+                use_kid=False, btest_splits=8,
+                inception_batch_size=None,
+                use_ms_ssim=False,
+                mock_GE=False):
         """
             Args:
-                use_inception_score: True, to calculate inception score.
-                use_fid: True, to calculcate Frechet inception distance.
-                use_kid: True, to calculate kernel inception distance.
+                use_inception_score: True, to calculate inception score (IS).
+                use_fid: True, to calculcate Frechet inception distance (FID).
+                use_kid: True, to calculate kernel inception distance (KID).
+                btest_splits: Number of splits to block estimate MMD in KID.
+                inception_batch_size: Batch size to calculate inception activations with.
                 use_ms_ssim: True, to calculate multi-scale structure similarity.
+                mock_GE: True, to return mock values (DEBUGGING).
 
         """
         # TODO Verify that this plugin works correctly!!!
@@ -431,9 +437,24 @@ class GeneratorEvaluator(ModelPlugin):
             return
 
         eval_scores = {}
-        reals_len = reals.size()[0]
-        fakes_len = fakes.size()[0]
+        reals_len = reals.size(0)
+        fakes_len = fakes.size(0)
         assert(reals_len == fakes_len)
+        logger.debug("GeneratorEvaluator. Calculating using %d samples.", reals_len)
+
+        if mock_GE:
+            if use_inception_score:
+                self.results.IS = 3.
+            if use_fid:
+                self.results.FID = 0.4
+            if use_kid:
+                self.results.KID = 0.4
+                self.results.KID_std = 0.1
+            if use_ms_ssim:
+                self.results.MS_SSIM = 3
+                self.results.MS_SSIM_std = 0.5
+            return
+
         reals_np = reals.numpy()
         fakes_np = fakes.numpy()
 
@@ -445,7 +466,8 @@ class GeneratorEvaluator(ModelPlugin):
 
                 acts = self.precalc_inception_activations(reals_np if use_fid or use_kid else None,
                                                           fakes_np,
-                                                          output_tensor, self.inception_graph)
+                                                          output_tensor, self.inception_graph,
+                                                          inception_batch_size or self.data.batch_size['test'])
                 real_a, real_l, gen_a, gen_l = acts
 
                 if use_inception_score:
@@ -461,20 +483,20 @@ class GeneratorEvaluator(ModelPlugin):
 
                 if use_kid:
                     # Split data into 8 blocks and calculate estimations of KID and its std
-                    # TODO perhaps introduce a hparam to control splits
                     kid_fn = self.tfgan.kernel_classifier_distance_and_std_from_activations
                     kid_fn = functools.partial(kid_fn,
-                                               max_block_size=fakes_len // self._num_of_kid_blocks)
+                                               max_block_size=math.ceil(fakes_len / btest_splits))
                     kid_mean, kid_std = kid_fn(real_a, gen_a)
                     eval_scores['KID'] = kid_mean
                     # FIXME: This patches a bug in the calculation of KID's std by tfgan
                     # Remove when it is corrected
-                    kid_var = self._num_of_kid_blocks * self.math_ops.square(kid_std)
+                    kid_var = btest_splits * self.math_ops.square(kid_std)
                     eval_scores['KID_std'] = self.math_ops.sqrt(kid_var)
 
         if use_ms_ssim:
             with self.tf.device(self.tf_device_name):
-                ms_ssims = self.calc_ms_ssim(fakes_np, reals_np)
+                ms_ssims = self.calc_ms_ssim(fakes_np, reals_np,
+                                             batch_size=self.data.batch_size['test'])
                 assert(self.array_ops.rank(ms_ssims) == 1)  # XXX
                 assert(self.array_ops.shape(ms_ssims)[0] == reals_len)
                 mn = self.math_ops.reduce_mean(ms_ssims)
@@ -484,17 +506,18 @@ class GeneratorEvaluator(ModelPlugin):
                 eval_scores['MS_SSIM_std'] = std
 
         # Execute collected scores
-        sess = self.tf.Session()
-        with sess.as_default():
-            eval_scores = sess.run(eval_scores)
+        with self.tf.device(self.tf_device_name):
+            sess = self.tf.Session()
+            with sess.as_default():
+                eval_scores = sess.run(eval_scores)
 
         # Log scores
         for key, value in eval_scores.items():
-            self.results[key] = float(value)
+            self.results[key] = value.item()  # numpy's `item`
 
     def precalc_inception_activations(self, reals, fakes, output_tensor,
-                                      inception_net):
-        dtype = tuple(self.tf.float32 for _ in output_tensor)
+                                      inception_net, batch_size=32):
+        dtype = list(self.tf.float32 for _ in output_tensor)
 
         classifier_fn = functools.partial(self.tfgan.run_inception,
                                           graph_def=inception_net,
@@ -521,7 +544,8 @@ class GeneratorEvaluator(ModelPlugin):
             size = self.INCEPTION_DEFAULT_IMAGE_SIZE
             images = self.tf.image.resize_bilinear(images, [size, size])
             # Calculate number of batches for computation efficiency
-            num_batches = images.shape[0] // self._inception_v1_batch_size
+            num_batches = images.shape[0] // batch_size
+            assert(images.shape[0] == batch_size * num_batches)
             images_list = self.array_ops.split(images,
                                                num_or_size_splits=num_batches)
             imgs = self.array_ops.stack(images_list)
@@ -547,7 +571,7 @@ class GeneratorEvaluator(ModelPlugin):
 
         return real_a, real_l, gen_a, gen_l
 
-    def calc_ms_ssim(self, fakes, reals):
+    def calc_ms_ssim(self, fakes, reals, batch_size=32):
         assert(type(fakes) == np.ndarray)
         assert(len(fakes.shape) == 4)
         assert(fakes.shape[1] == 3)
@@ -560,7 +584,8 @@ class GeneratorEvaluator(ModelPlugin):
         fakes = self.tf.transpose(fakes, [0, 2, 3, 1])
         reals = self.tf.transpose(reals, [0, 2, 3, 1])
         # Calculate number of batches for computation efficiency
-        num_batches = fakes.shape[0] // self._inception_v1_batch_size
+        num_batches = fakes.shape[0] // batch_size
+        assert(fakes.shape[0] == batch_size * num_batches)
         fakes_list = self.array_ops.split(fakes,
                                           num_or_size_splits=num_batches)
         fake_imgs = self.array_ops.stack(fakes_list)
@@ -646,7 +671,8 @@ class GAN(ModelPlugin):
             score_sample_size: Sample size to compute generator evaluation with.
 
         """
-        batch_size = self.data.batch_size['train'] if self._train else self.data.batch_size['test']
+        batch_size = self.data.batch_size['test']
+        assert(self.data.batch_size['train'] == self.data.batch_size['test'])  # XXX
         rounds = score_sample_size // batch_size
         reals = []
         fakes = []

@@ -2,8 +2,8 @@
 
 '''
 
-
 import logging
+import pprint
 
 from cortex._lib import (config, data, exp, optimizer, setup_cortex,
                          setup_experiment, train)
@@ -35,8 +35,8 @@ def run(model=None):
         print_section('DATA')
         data.setup(**exp.ARGS['data'])
         print_section('MODEL')
-        model.reload_nets(reload_nets)
         model.build()
+        model.reload_nets(reload_nets)
         print_section('OPTIMIZER')
         optimizer.setup(model, reload_optims,
                         **exp.ARGS['optimizer'])

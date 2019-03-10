@@ -67,7 +67,8 @@ def wrap_optimizer(C):
                 bound = group['clipping']
                 if bound:
                     for p in group['params']:
-                        p.data.clamp_(-bound, bound)
+                        with torch.no_grad():
+                            p.clamp_(-bound, bound)
             return loss
 
     return Op
@@ -88,11 +89,7 @@ def setup(model, reload_states, optimizer='Adam', learning_rate=1.e-4,
         model_optimizer_options: Optimizer options for specified model.
 
     '''
-
     OPTIMIZERS.clear()
-    model_optimizer_options = model_optimizer_options or {}
-    weight_decay = weight_decay or {}
-    clipping = clipping or {}
 
     # Set the optimizer options
     if len(optimizer_options) == 0:
@@ -129,7 +126,7 @@ def setup(model, reload_states, optimizer='Adam', learning_rate=1.e-4,
 
     model._reset_epoch()
     model.data.reset(make_pbar=False, mode='train')
-    model.train_step(_init=True)
+    model.train_step()
     model.visualize(auto_input=True)
 
     training_nets = model._get_training_nets()

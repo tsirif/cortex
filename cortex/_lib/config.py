@@ -33,7 +33,6 @@ def set_config():
 
     '''
     global CONFIG
-    config = ConfigHandler()
     config_file = DEFAULT_LOCATION
     isfile = path.isfile(config_file)
 
@@ -52,10 +51,8 @@ def set_config():
         arch_paths = d.get('arch_paths', {})
         out_path = d.get('out_path', None)
 
-        config.update(viz=viz, data_paths=data_paths,
+        CONFIG.update(viz=viz, data_paths=data_paths,
                       arch_paths=arch_paths, out_path=out_path)
-
-    CONFIG = config
 
 
 _welcome_message = 'Welcome to cortex! Cortex is a library meant to inject ' \

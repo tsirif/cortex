@@ -7,6 +7,7 @@ import math
 
 from sklearn import svm
 import torch
+from torch import nn
 
 
 logger = logging.getLogger(__name__)
@@ -148,14 +149,48 @@ def to_one_hot(y, K):
 
 
 def update_average_model(target_net, source_net, beta):
-    for p in target_net.parameters():
-        p._requires_grad(False)
-    for p in source_net.parameters():
-        p._requires_grad(False)
-
     param_dict_src = dict(source_net.named_parameters())
-
     for p_name, p_target in target_net.named_parameters():
         p_source = param_dict_src[p_name]
         assert(p_source is not p_target)
-        p_target.add_(p_source.sub(p_target).mul(1. - beta))
+        with torch.no_grad():
+            p_target.add_(p_source.sub(p_target).mul(1. - beta))
+
+    buffer_dict_src = dict(source_net.named_buffers())
+    for b_name, b_target in target_net.named_buffers():
+        b_source = buffer_dict_src[b_name]
+        assert(b_source is not b_target)
+        with torch.no_grad():
+            # Batch Norm statistics are already averaged...
+            b_target.copy_(b_source)
+
+
+def parameters_init(m, nonlinearity=None, output_nonlinearity=None):
+    """Helper function to initialize parameters in a network.
+
+    Use `network.apply(parameters_init)`.
+
+        Args:
+            m: `torch.nn.Module` to initialize, part of a larger network
+            nonlinearity: type applied throughout network except its output
+            output_nonlinearity: type applied at the network's output
+
+    """
+    nonlinearity = nonlinearity or 'ReLU'
+    nonlinearity = 'leaky_relu' if nonlinearity == 'LeakyReLU' else nonlinearity
+    nonlinearity = 'relu' if nonlinearity == 'ReLU' else nonlinearity
+    if 'final' in getattr(m, 'name', ''):  # 'final' denotes last layer
+        nonlinearity = output_nonlinearity or 'linear'
+    if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
+        if nonlinearity in ('relu', 'leaky_relu'):
+            # a == 0.02 is the same value as
+            # `built_ins.networks.utils.get_nonlinearity`  XXX
+            nn.init.kaiming_uniform_(m.weight, a=0.02, mode='fan_in',
+                                     nonlinearity=nonlinearity)
+        else:
+            gain = nn.init.calculate_gain(nonlinearity)
+            nn.init.xavier_uniform_(m.weight, gain=gain)
+        if m.bias is not None:
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(m.weight)
+            bound = 1 / math.sqrt(fan_in)
+            nn.init.uniform_(m.bias, -bound, bound)

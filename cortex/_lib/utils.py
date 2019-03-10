@@ -53,7 +53,7 @@ def update_nested_dict(d_to_update, **d):
 
     Args:
         d_to_update (dict): nested dictionary.
-        **d: keyword arguments to append.
+        **d: keyword arguments to update.
 
     """
     for k, v in d.items():
@@ -66,52 +66,55 @@ def update_nested_dict(d_to_update, **d):
 
 
 def bad_values(d):
+    def is_nan_or_inf(t):
+        t_ = torch.as_tensor(t)
+        return torch.any(torch.isnan(t_) | torch.isinf(t_))
+
     failed = {}
     for k, v in d.items():
         if isinstance(v, dict):
-            v_ = bad_values(v)
-            if v_:
-                failed[k] = v_
+            ret = bad_values(v)
+        elif isinstance(v, (list, tuple)):
+            ret = {}
+            for i, v_ in enumerate(v):
+                ret_ = v_ if is_nan_or_inf(v_) else False
+                if ret_:
+                    ret[i] = ret_
         else:
-            if isinstance(v, (list, tuple)):
-                v_ = []
-                for v__ in v:
-                    if isinstance(v__, torch.Tensor):
-                        v_.append(v__.item())
-                    else:
-                        v_.append(v__)
-                v_ = np.array(v_).sum()
-            elif isinstance(v, torch.Tensor):
-                v_ = v.item()
-            else:
-                v_ = v
-            if np.isnan(v_) or np.isinf(v_):
-                failed[k] = v_
+            ret = v if is_nan_or_inf(v) else False
 
-    if len(failed) == 0:
-        return False
-    return failed
+        if ret:
+            failed[k] = ret
+
+    return failed if failed else False
 
 
-def convert_to_numpy(o):
-    if isinstance(o, torch.Tensor):
-        o = o.data.cpu().numpy()
-        if len(o.shape) == 1 and o.shape[0] == 1:
-            o = o[0]
-    elif isinstance(o, (torch.cuda.FloatTensor, torch.cuda.LongTensor)):
-        o = o.cpu().numpy()
-    elif isinstance(o, list):
-        for i in range(len(o)):
-            o[i] = convert_to_numpy(o[i])
-    elif isinstance(o, tuple):
-        o_ = tuple()
-        for i in range(len(o)):
-            o_ = o_ + (convert_to_numpy(o[i]),)
-        o = o_
-    elif isinstance(o, dict):
-        for k in o.keys():
-            o[k] = convert_to_numpy(o[k])
-    return o
+def convert_to_numpy(value):
+    """NOTE: This method synchronizes with GPU."""
+    if isinstance(value, torch.Tensor):
+        o = value.detach().squeeze().cpu().numpy()
+        if len(o.shape) == 0:
+            return o.item()
+        return o
+    elif isinstance(value, list):
+        return list(convert_to_numpy(vv) for vv in value)
+    elif isinstance(value, tuple):
+        return tuple(convert_to_numpy(vv) for vv in value)
+    elif isinstance(value, dict):
+        return dict((vk, convert_to_numpy(vv)) for vk, vv in value.items())
+    return value
+
+
+def detach_nested(value):
+    if isinstance(value, torch.Tensor):
+        return value.detach()
+    elif isinstance(value, list):
+        return list(detach_nested(vv) for vv in value)
+    elif isinstance(value, tuple):
+        return tuple(detach_nested(vv) for vv in value)
+    elif isinstance(value, dict):
+        return dict((vk, detach_nested(vv)) for vk, vv in value.items())
+    return value
 
 
 def compute_tsne(X, perplexity=40, n_iter=300, init='pca'):
@@ -126,21 +129,20 @@ def summarize_results(results, with_std=True):
     results_ = {}
     for k, v in results.items():
         if isinstance(v, dict):
-            results_[k] = summarize_results(v)
-        else:
+            results_[k] = summarize_results(v, with_std=with_std)
+        elif isinstance(v, (list, tuple)):
             if len(v) > 0:
-                try:
-                    v = np.asarray(v)
-                    mv = np.mean(v)
-                    if with_std:
-                        minv = np.min(v)
-                        maxv = np.max(v)
-                        stdv = np.std(v, ddof=1)
-                        results_[k] = (mv, stdv, minv, maxv)
-                    else:
-                        results_[k] = mv
-                except BaseException:
-                    raise ValueError(
-                        'Something is wrong with result {} of type {}.'.format(
-                            k, type(v[0])))
+                v = list(map(torch.as_tensor, v))
+                v = torch.stack(v, dim=-1).squeeze()
+                mv = v.mean(dim=-1)
+                if with_std:
+                    minv = v.min(dim=-1)[0]
+                    maxv = v.max(dim=-1)[0]
+                    stdv = v.std(dim=-1)
+                    results_[k] = (mv, stdv, minv, maxv)
+                else:
+                    results_[k] = mv
+        else:
+            v = torch.as_tensor(v).squeeze_()
+            results_[k] = (v, float('nan'), v, v) if with_std else v
     return results_

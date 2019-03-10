@@ -6,6 +6,7 @@ import logging
 import pprint
 import sys
 import time
+import warnings
 
 from . import (exp, random, viz)
 from .utils import (convert_to_numpy, summarize_results, update_dict_of_lists)
@@ -27,13 +28,13 @@ def train_epoch(model, epoch, full_eval_during_train, validate_batches=0,
         return eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar)
 
     results = summarize_results(model._all_epoch_results)
-    return results
+    return convert_to_numpy(results)
 
 
 def eval_epoch(model, epoch, data_mode='train', use_pbar=True):
     model.eval_loop(epoch, data_mode=data_mode, use_pbar=use_pbar)
     results = summarize_results(model._all_epoch_results)
-    return results
+    return convert_to_numpy(results)
 
 
 def test_epoch(model, epoch, data_mode='test', use_pbar=True, test_seed=None):
@@ -46,6 +47,7 @@ def test_epoch(model, epoch, data_mode='test', use_pbar=True, test_seed=None):
 
     model.data.reset(make_pbar=False, mode='test')
     model.data.next()
+    model.viz.clear()
     model.visualize(auto_input=True)
 
     if train_prg_state is not None:
@@ -55,32 +57,33 @@ def test_epoch(model, epoch, data_mode='test', use_pbar=True, test_seed=None):
 
 
 def display_results(train_results, valid_results, test_results,
-                    epoch, epochs, epoch_time, total_time, nl=0):
+                    epoch, epochs, epoch_time, total_time, nl=0,
+                    sep='\n\t\t'):
     if epochs and epoch:
-        nl += 1
-        print('\n\tEpoch {}/{} took {:.3f}s. Total time: {:.2f}s'
+        nl += 2
+        print('\n\tEpoch {} / {} took {:.3f}s. Total time: {:.2f}s'
               .format(epoch, epochs, epoch_time, total_time))
 
     times = train_results.pop('times', None)
     if times:
         nl += 1
-        time_strs = ['{}: {:.2f}'.format(k, v[0]) for k, v in times.items()]
-        print('\tAvg update times:: ' + ' | '.join(time_strs))
+        time_strs = ['{}: {:.3f}'.format(k, v[0]) for k, v in times.items()]
+        print('\tAvg update times:: ' + sep.join(time_strs))
 
     train_losses = train_results.pop('losses')
     test_losses = test_results.pop('losses', None)
 
     nl += 1
-    loss_strs = ['{}: {:.2f} ({:.2f})'
+    loss_strs = ['{}: {:.4f} ({:.4f})'
                  .format(k, train_losses[k][0], train_losses[k][1])
                  for k in train_losses.keys()]
-    print('\tAvg (std) train loss:: ' + ' | '.join(loss_strs))
+    print('\tAvg (std) train loss:: ' + sep.join(loss_strs))
     nl += 1
     if test_losses:
-        loss_strs = ['{}: {:.2f} ({:.2f})'
+        loss_strs = ['{}: {:.4f} ({:.4f})'
                      .format(k, test_losses[k][0], test_losses[k][1])
                      for k in test_losses.keys()]
-        print('\tAvg (std) test loss:: ' + ' | '.join(loss_strs))
+        print('\tAvg (std) test loss:: ' + sep.join(loss_strs))
     else:
         print('\tAvg (std) test loss:: -')
 
@@ -91,14 +94,14 @@ def display_results(train_results, valid_results, test_results,
     for k, v_train in train_results.items():
         nl += 1
         if isinstance(v_train, dict):
-            print('\t{}:: '.format(k) + ' | '.join(['{}: {:.2f} ({:.2f})'
+            print('\t{}::\n'.format(k) + sep.join(['{}: {:.4f} ({:.4f})'
                   .format(k_, v[0], v[1]) for k_, v in v_train.items()]))
         else:
-            print('\t{}: {:.2f} ({:.2f})'.format(k, v_train[0], v_train[1]))
+            print('\t{}: {:.4f} ({:.4f})'.format(k, v_train[0], v_train[1]))
     if tunables:
         nl += 1
-        print('\ttunables:: ' + ' | '.join(['{}: {:.2f}'
-              .format(k_, v) for k_, v in tunables.items()]))
+        print('\ttunables::\n' + sep.join(['{}: {:.4f}'
+              .format(k_, v[0]) for k_, v in tunables.items()]))
 
     if valid_results:
         nl += 3
@@ -107,10 +110,10 @@ def display_results(train_results, valid_results, test_results,
         for k, v_valid in valid_results.items():
             nl += 1
             if isinstance(v_valid, dict):
-                print('\t{}:: '.format(k) + ' | '.join(['{}: {:.2f}'
-                      .format(k_, v) for k_, v in v_valid.items()]))
+                print('\t{}::\n'.format(k) + sep.join(['{}: {:.4f}'
+                      .format(k_, v[0]) for k_, v in v_valid.items()]))
             else:
-                print('\t{}: {:.2f}'.format(k, v_valid))
+                print('\t{}: {:.4f}'.format(k, v_valid[0]))
 
     if test_results:
         nl += 3
@@ -119,10 +122,10 @@ def display_results(train_results, valid_results, test_results,
         for k, v_test in test_results.items():
             nl += 1
             if isinstance(v_test, dict):
-                print('\t{}:: '.format(k) + ' | '.join(['{}: {:.2f} ({:.2f})'
+                print('\t{}::\n'.format(k) + sep.join(['{}: {:.4f} ({:.4f})'
                       .format(k_, v[0], v[1]) for k_, v in v_test.items()]))
             else:
-                print('\t{}: {:.2f} ({:.2f})'.format(k, v_test[0], v_test[1]))
+                print('\t{}: {:.4f} ({:.4f})'.format(k, v_test[0], v_test[1]))
 
     if epoch and epochs and epoch != epochs:
         if nl > 0:
@@ -130,50 +133,17 @@ def display_results(train_results, valid_results, test_results,
             sys.stdout.flush()
 
 
-def align_summaries(d_train, d_test):
-    keys = set(d_train.keys()).union(set(d_test.keys()))
-    for k in keys:
-        if k in d_train and k in d_test:
-            v_train = d_train[k]
-            v_test = d_test[k]
-            if isinstance(v_train, dict):
-                max_train_len = max([len(v) for v in v_train.values()])
-                max_test_len = max([len(v) for v in v_test.values()])
-                max_len = max(max_train_len, max_test_len)
-                for k_, v in v_train.items():
-                    if len(v) < max_len:
-                        v_train[k_] = (v_train[k_] + [v_train[k_][-1]] *
-                                       (max_len - len(v_train[k_])))
-                for k_, v in v_test.items():
-                    if len(v) < max_len:
-                        v_test[k_] = (v_test[k_] + [v_test[k_][-1]] *
-                                      (max_len - len(v_test[k_])))
-            else:
-                if len(v_train) > len(v_test):
-                    d_test[k] = (v_test + [v_test[-1]] *
-                                 (len(v_train) - len(v_test)))
-                elif len(v_test) > len(v_train):
-                    d_train[k] = (v_train + [v_train[-1]] *
-                                  (len(v_test) - len(v_train)))
-        elif k in d_train:
-            v_train = d_train[k]
-            if isinstance(v_train, dict):
-                max_len = max([len(v) for v in v_train.values()])
-                for k_, v in v_train.items():
-                    if len(v) < max_len:
-                        v_train[k_] = (v_train[k_] + [v_train[k_][-1]] *
-                                       (max_len - len(v_train[k_])))
-        elif k in d_test:
-            v_test = d_test[k]
-            if isinstance(v_test, dict):
-                max_len = max([len(v) for v in v_test.values()])
-                for k_, v in v_test.items():
-                    if len(v) < max_len:
-                        v_test[k_] = v_test[k_] + [v_test[k_][-1]] * \
-                            (max_len - len(v_test[k_]))
+def align_summaries(epoch, summary):
+    for k in summary.keys():
+        v = summary[k]
+        if isinstance(v, dict):
+            for vk in v.keys():
+                v[vk] = v[vk] + [v[vk][-1]] * (epoch - len(v[vk]))
+        else:
+            summary[k] = v + [v[-1]] * (epoch - len(v))
 
 
-def save_best(model, train_results, best, save_on_best, save_on_lowest):
+def save_best(epoch, model, train_results, best, save_on_best, save_on_lowest):
     flattened_results = {}
     for k, v in train_results.items():
         if isinstance(v, dict):
@@ -197,16 +167,24 @@ def save_best(model, train_results, best, save_on_best, save_on_lowest):
             found_best = current > best
         if found_best:
             best = current
-            print(
-                '\nFound best {} (train): {}'.format(
-                    save_on_best, best))
             exp.save(model, prefix='best_' + save_on_best)
+        msg = '\nFound best {0} on epoch {1}: {2[0]:.5f} ({2[1]:.4f})'.format(
+            save_on_best, epoch, best)
+        if found_best:
+            print(msg)
+        else:
+            print('\n')
 
         return best
 
+    warnings.warn("Key '{}' was not found in flattened train results.\n"
+                  "Flattened train result keys:\n{}".format(
+                      save_on_best, tuple(flattened_results.keys())),
+                  RuntimeWarning)
+
 
 def main_loop(model, epochs=500, validate_batches=0, autotune_on=False,
-              archive_every=10, test_every=1, test_seed=None,
+              archive_every=10, test_every=1,
               save_on_best=None, save_on_lowest=None, save_on_highest=None,
               full_eval_during_train=False,
               train_mode='train', test_mode='test', eval_only=False,
@@ -221,9 +199,6 @@ def main_loop(model, epochs=500, validate_batches=0, autotune_on=False,
         archive_every: Period of epochs for writing checkpoints.
         test_every: Period of epochs for performing tests and
             expensive visualizations.
-        test_seed: If not ``None``, then model testing happens under the same
-            seeding conditions every time. Training PRG state is not affected
-            by this choice or by the testing.
         save_on_best: Name of the key in results to track
             for saving the best model.
         save_on_lowest: Saves when lowest of `save_on_best` result is found.
@@ -240,82 +215,88 @@ def main_loop(model, epochs=500, validate_batches=0, autotune_on=False,
 
     logger.info('Starting main loop.')
 
-    if (viz.visualizer):
+    if viz.visualizer:
         viz.visualizer.text(info, env=exp.NAME, win='info')
-    total_time = 0.
 
     if eval_only:
         test_results = test_epoch(model, 'Testing',
                                   data_mode=test_mode, use_pbar=False)
-        convert_to_numpy(test_results)
-
         display_results(test_results, dict(), dict(),
                         'Evaluation', None, None, None)
         exit(0)
 
     best = None
     if not isinstance(epochs, int):
-            epochs = epochs['epochs']
+        epochs = epochs['epochs']
     epoch = exp.INFO['epoch']
     first_epoch = epoch
+    total_time = 0.
 
     while epoch < epochs:
         try:
-            logger.info('Epoch {} / {}'.format(epoch, epochs))
             start_time = time.time()
 
-            # TRAINING
+            # EPOCH INCREMENT
+            exp.INFO['epoch'] += 1
+            epoch = exp.INFO['epoch']
+            logger.info('Epoch {} / {}'.format(epoch, epochs))
+
+            # TRAINING & VALIDATION
             train_results_ = train_epoch(
                 model, epoch, full_eval_during_train,
                 validate_batches=validate_batches, autotune_on=autotune_on,
                 data_mode=train_mode, use_pbar=not(pbar_off))
-            convert_to_numpy(train_results_)
 
+            # SAVE IF BEST MODEL FOUND
             if save_on_best or save_on_highest or save_on_lowest:
-                best = save_best(model, train_results_, best, save_on_best,
-                                 save_on_lowest)
+                best = save_best(epoch, model, train_results_,
+                                 best, save_on_best, save_on_lowest)
 
-            # VALIDATION
-            valid_results_ = train_results_.pop('validate', None)
+            # TRAINING AND VALIDATION SUMMARY
+            valid_results_ = train_results_.pop('validate', dict())
             update_dict_of_lists(exp.SUMMARY['train'], **train_results_)
-            if 'validate' not in exp.SUMMARY:
+            if 'validate' not in exp.SUMMARY:  # XXX
                 exp.SUMMARY['validate'] = dict()
             update_dict_of_lists(exp.SUMMARY['validate'], **valid_results_)
 
             # TESTING
+            is_testing_epoch = (test_every and (epoch - 1) % test_every == 0) or \
+                epoch == epochs
             test_results_ = dict()
-            if (test_every and epoch % test_every == 0) or epoch == epochs - 1:
-                if not(pbar_off):
-                    sys.stdout.write("\r")
+            if is_testing_epoch:
+                if not pbar_off:
+                    sys.stdout.write("\033[F" * 2)
                     sys.stdout.flush()
                 test_results_ = test_epoch(model, epoch, data_mode=test_mode,
                                            use_pbar=not(pbar_off),
-                                           test_seed=test_seed)
-                convert_to_numpy(test_results_)
+                                           test_seed=exp.INFO.get('test_seed'))
                 update_dict_of_lists(exp.SUMMARY['test'], **test_results_)
+                if not pbar_off:
+                    print('\n')
 
-            # Finishing up
-            align_summaries(exp.SUMMARY['train'], exp.SUMMARY['test'])
+            # FINISH TOTAL SUMMARY
+            align_summaries(epoch, exp.SUMMARY['train'])
+            align_summaries(epoch, exp.SUMMARY['validate'])
+            align_summaries(epoch, exp.SUMMARY['test'])
+
             epoch_time = time.time() - start_time
             total_time += epoch_time
 
-            if viz.visualizer:
-                plot(epoch, init=(epoch == first_epoch))
-                if (test_every and epoch % test_every == 0) or \
-                        epoch == epochs - 1:
-                    model.viz.show()
-                    model.viz.clear()
+            # LIVE PLOT VISUALIZATION
+            plot(epoch, init=(epoch == first_epoch + 1))
+            if is_testing_epoch:
+                model.viz.show(epoch)
 
-            exp.INFO['epoch'] += 1
-            epoch = exp.INFO['epoch']
-
+            # SHELL DISPLAY SUMMARY
             display_results(train_results_, valid_results_, test_results_,
                             epoch, epochs,
                             epoch_time, total_time,
-                            nl=int(not(pbar_off)))
+                            nl=3 + int(not pbar_off) * int(is_testing_epoch))
 
-            if (archive_every and epoch % archive_every == 0):
-                exp.save(model, prefix=epoch)
+            # CHECKPOINT MODEL
+            if archive_every:
+                if (epoch - 1) % archive_every == 0:
+                    exp.save(model, prefix=epoch)
             else:
                 exp.save(model, prefix='last')
 

@@ -3,7 +3,6 @@
 '''
 
 import argparse
-import ast
 import copy
 import inspect
 import logging
@@ -90,7 +89,7 @@ default_args = dict(data=data_args, optimizer=optimizer_args, train=train_args)
 default_help = dict(data=data_help, optimizer=optimizer_help, train=train_help)
 
 _protected_args = ['arch', 'out_path', 'name', 'reload',
-                   'args', 'copy_to_local', 'meta', 'config_file',
+                   'args', 'copy_to_local', 'meta', 'config',
                    'clean', 'verbosity', 'test', 'seed']
 
 logger = logging.getLogger('cortex.parsing')
@@ -135,20 +134,25 @@ def make_argument_parser() -> argparse.ArgumentParser:
                         help=('Path to model to reload. Does not load args,'
                               ' info, etc'))
     parser.add_argument('-m', '--meta', type=str, default=None)
-    parser.add_argument('-c', '--config-file', default=None,
+    parser.add_argument('-c', '--config', default=None,
                         help='Configuration yaml file.')
     #  'See `exps/` for examples'))  # TODO
     parser.add_argument('-k', '--clean', action='store_true', default=False,
-                        help=('Cleans the output directory. '
-                              'This cannot be undone!'))
-    parser.add_argument('-v', '--verbosity', type=int, default=1,
-                        help='Verbosity of the logging. (0, 1, 2)')
+                        help='Cleans the output directory. '
+                             'This cannot be undone!')
+    parser.add_argument('--verbosity', '-v', action='count', default=0,
+                        help='Verbosity of the logging '
+                             '(0-warning, 1-info, 2-debug, 3++-for root logger).')
     parser.add_argument('-d', '--device', type=str, default='0',
                         help="Enter a number to try declare the CUDA device to use,"
                              " else enter 'cpu' to use CPU.")
-    parser.add_argument('-s', '--seed', type=str, default='randomness',
+    parser.add_argument('--seed', type=str, default='randomness',
                         help="A string which will be used to seed "
                              "experiment's PRGs.")
+    parser.add_argument('--test-seed', type=str,
+                        help="A string which will be used to fix the seed "
+                             "used in experiment's testing PRGs. If `None`, "
+                             "then model testing happens with the same PRGs as training.")
     return parser
 
 

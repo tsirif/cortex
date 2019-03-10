@@ -177,8 +177,8 @@ class ResBlock(nn.Module):
         models.add_module(name + '_stage1', conv)
         finish_layer_2d(models, name + '_stage1',
                         dim_x_hidden, dim_y_hidden, dim_c_hidden,
-                        nonlinearity=nonlinearity, **layer_args)
-
+                        nonlinearity=nonlinearity, inplace_nonlin=True,
+                        **layer_args)
         # Stage 2
         if resample == 'down':
             conv = ConvMeanPool(dim_c_hidden, dim_out, f_size,
@@ -245,8 +245,9 @@ class ResDecoder(nn.Module):
         name = 'conv_({}/{})_final'.format(dim_out, dim_out_)
         finish_layer_2d(models, 'pre_' + name, dim_x, dim_y, dim_out,
                         nonlinearity=nonlinearity, **layer_args)
-        models.add_module(name, nn.ConvTranspose2d(
-            dim_out, dim_out_, f_size, 1, 1, bias=True))
+        final_conv = nn.ConvTranspose2d(dim_out, dim_out_, f_size, 1, 1, bias=True)
+        final_conv.name = name
+        models.add_module(name, final_conv)
 
         self.models = models
 
@@ -315,7 +316,8 @@ class ResEncoder(BaseNet):
         name = 'reshape_{}x{}x{}to{}'.format(dim_x, dim_y, final_depth, dim_out)
         self.models.add_module(name, View(-1, dim_out))
         finish_layer_1d(self.models, 'post_' + name, dim_out,
-                        nonlinearity=nonlinearity, **layer_args)
+                        nonlinearity=nonlinearity, inplace_nonlin=True,
+                        **layer_args)
 
         dim_out = self.add_linear_layers(dim_out, fully_connected_layers,
                                          Linear=Linear, **layer_args)

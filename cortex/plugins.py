@@ -297,17 +297,18 @@ class ModelPlugin(ModelPluginBase):
         This can be overridden to change the behavior of the optimizer.
 
         """
-        if self._train is False:
-            return
-
-        keys = self._all_losses.keys()
+        keys = list(self.losses.keys())
+        logger.debug("OPTIMIZATION STEP for:\n  %s", keys)
 
         for i, k in enumerate(keys):
-            loss = self._all_losses.pop(k)
-            loss.backward(retain_graph=(i < len(keys)))
-            optimizer = self._optimizers.get(k)
+            optimizer = self.optimizers.get(k)
             if optimizer is not None:
+                loss = self.losses.get(k)
+                loss.backward(retain_graph=(i < len(keys)))
                 optimizer.step()
+            else:
+                logger.error("Found total loss for '{}' net, "
+                             "but no corresponding optimizer...".format(k))
 
     def train_loop(self, validate_batches=0, autotune_on=False):
         """The training loop.
@@ -318,9 +319,10 @@ class ModelPlugin(ModelPluginBase):
             eval_batches: Number of batches to be used for model validation.
 
         """
-
+        logger.debug("TRAINING LOOP")
         try:
             while self.data.u < validate_batches:
+                logger.debug("VALIDATION STEP")
                 self.eval_step()
 
             if validate_batches > 0:
@@ -334,10 +336,18 @@ class ModelPlugin(ModelPluginBase):
                 update_nested_dict(self._all_validation, **validation)
 
                 if autotune_on is True:
+                    logger.debug("AUTOTUNE STEP")
                     self.autotune()
 
+            i = 0
             while True:
+                logger.debug("TRAINING STEP")
                 self.train_step()
+                i += 1
+                if i > 5:
+                    break
+
+            self.data.finish_pbar()
 
         except StopIteration:
             pass
@@ -348,10 +358,17 @@ class ModelPlugin(ModelPluginBase):
         This can be overridden to change the behavior of the evaluation loop.
 
         """
-
+        logger.debug("EVALUATION LOOP")
         try:
+            i = 0
             while True:
+                logger.debug("EVALUATION STEP")
                 self.eval_step()
+                i += 1
+                if i > 5:
+                    break
+
+            self.data.finish_pbar()
 
         except StopIteration:
             pass
@@ -366,7 +383,7 @@ class ModelPlugin(ModelPluginBase):
             Dimensions of the variables.
 
         """
-        return self._data.get_dims(*queries)
+        return self.data.get_dims(*queries)
 
     def add_noise(self, key, dist=None, size=None, **kwargs):
         """Adds a noise variable to the model.
@@ -377,7 +394,7 @@ class ModelPlugin(ModelPluginBase):
             size (int): Size of the noise.
             **kwargs: keyword arguments for noise distribution.
         """
-        self._data.add_noise(key, dist=dist, size=size, **kwargs)
+        self.data.add_noise(key, dist=dist, size=size, **kwargs)
 
     def add_image(self, *args, **kwargs):
         """Adds image for visualization.
@@ -387,7 +404,7 @@ class ModelPlugin(ModelPluginBase):
             **kwargs: TODO
 
         """
-        self._viz.add_image(*args, **kwargs)
+        self.viz.add_image(*args, **kwargs)
 
     def add_histogram(self, *args, **kwargs):
         """Adds histogram for visualizaiton.
@@ -397,7 +414,7 @@ class ModelPlugin(ModelPluginBase):
             **kwargs: TODO
 
         """
-        self._viz.add_histogram(*args, **kwargs)
+        self.viz.add_histogram(*args, **kwargs)
 
     def add_scatter(self, *args, **kwargs):
         """Adds a scatter plot to visualization.
@@ -407,7 +424,7 @@ class ModelPlugin(ModelPluginBase):
             **kwargs: TODO
 
         """
-        self._viz.add_scatter(*args, **kwargs)
+        self.viz.add_scatter(*args, **kwargs)
 
 
 def register_plugin(plugin):

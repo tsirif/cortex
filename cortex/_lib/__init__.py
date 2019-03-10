@@ -80,7 +80,7 @@ def setup_experiment(args, model=None, testmode=False):
     update_args(experiment_args, exp.ARGS)
 
     exp.configure_from_yaml(config_file=config.DEFAULT_LOCATION)
-    exp.configure_from_yaml(config_file=args.config_file)
+    exp.configure_from_yaml(config_file=args.config)
 
     if not testmode:
         viz_init(config.CONFIG.viz)
@@ -107,6 +107,7 @@ def setup_experiment(args, model=None, testmode=False):
     reload_nets = None
     reload_optims = None
     if reload_path:
+        logger.info("Resuming experiment from path: %s", reload_path)
         d = exp.reload_model(reload_path)
         exp.INFO.update(**d['info'])
         exp.NAME = exp.INFO['name']
@@ -125,9 +126,11 @@ def setup_experiment(args, model=None, testmode=False):
         set_prgs_state(d['prgs'], seed=args.seed)
 
     else:
+        logger.info("Starting fresh experiment")
         if args.load_networks:
             d = exp.reload_model(args.load_networks)
             keys = args.networks_to_reload or d['nets']
+            logger.info("Reloading networks %s from: %s", keys, args.load_networks)
             for key in keys:
                 if key not in d['nets']:
                     raise KeyError('Model {} has no network called {}'
@@ -140,7 +143,8 @@ def setup_experiment(args, model=None, testmode=False):
                           clean=args.clean)
 
         reseed(args.seed)
-        exp.INFO['initial_seed'] = args.seed
+        exp.INFO['train_seed'] = args.seed
+        exp.INFO['test_seed'] = args.test_seed
 
     update_nested_dicts(exp.ARGS['model'], model.kwargs)
     exp.ARGS['model'].update(**model.kwargs)
@@ -152,8 +156,7 @@ def setup_experiment(args, model=None, testmode=False):
         pathlib.Path(local_data_path).mkdir(parents=True, exist_ok=True)
 
     for k, v in exp.ARGS.items():
-        logger.info('Ultimate {} arguments: \n{}'
-                    .format(k, pprint.pformat(v)))
-    logger.info('Experiment info: \n{}'.format(pprint.pformat(exp.INFO)))
+        logger.info('Ultimate %s arguments:\n%s', k, pprint.pformat(v))
+    logger.info('Experiment info:\n%s', pprint.pformat(exp.INFO))
 
     return model, reload_nets, reload_optims

@@ -89,40 +89,45 @@ class DataHandler:
         return self
 
     def __next__(self):
-        output = {}
-        sources = self.loaders.keys()
+        try:
+            output = {}
+            sources = self.loaders.keys()
 
-        batch_size = self.batch_size[self.mode]
-        for source in sources:
-            data = next(self.iterators[source])
-            if data[0].size()[0] < batch_size:
-                if self.skip_last_batch:
-                    raise StopIteration
-            batch_size = min(batch_size, data[0].size()[0])
-            data = dict((k, v) for k, v in zip(self.input_names[source], data))
+            batch_size = self.batch_size[self.mode]
+            for source in sources:
+                data = next(self.iterators[source])
+                if data[0].size(0) < batch_size:
+                    if self.skip_last_batch:
+                        raise StopIteration
+                    batch_size = data[0].size(0)
+                data = dict((k, v) for k, v in zip(self.input_names[source], data))
+                if len(sources) > 1:
+                    output[source] = data
+                else:
+                    output.update(**data)
+
             if len(sources) > 1:
-                output[source] = data
-            else:
-                output.update(**data)
+                output = {s: {k: v[0:batch_size] for k, v in d.items()}
+                          for s, d in output.items()}
 
-        if len(sources) > 1:
-            output = {s: {k: v[0:batch_size] for k, v in d.items()}
-                      for s, d in output.items()}
+            for k, n_vars in self.noise.items():
+                n_var = n_vars[self.mode]
+                n_var = n_var.sample()
+                n_var = n_var.to(exp.DEVICE)
 
-        for k, n_vars in self.noise.items():
-            n_var = n_vars[self.mode]
-            n_var = n_var.sample()
-            n_var = n_var.to(exp.DEVICE)
+                if n_var.size(0) != batch_size:
+                    n_var = n_var[0:batch_size]
+                output[k] = n_var
 
-            if n_var.size()[0] != batch_size:
-                n_var = n_var[0:batch_size]
-            output[k] = n_var
+            self.batch = output
+            self.u += 1
+            self.update_pbar()
 
-        self.batch = output
-        self.u += 1
-        self.update_pbar()
+            return self.batch
 
-        return self.batch
+        except StopIteration:
+            self.finish_pbar()
+            raise
 
     def next(self):
         return self.__next__()
@@ -197,6 +202,10 @@ class DataHandler:
     def update_pbar(self):
         if self.pbar:
             self.pbar.update(self.u)
+
+    def finish_pbar(self):
+        if self.pbar:
+            self.pbar.finish(end='')
 
     def reset(self, mode, make_pbar=True, string=''):
         self.mode = mode

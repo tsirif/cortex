@@ -87,7 +87,8 @@ class VizHandler():
     def __init__(self):
         self.clear()
         self.output_dirs = exp.OUT_DIRS
-        self.prefix = exp._file_string('')
+        #  self.prefix = exp._file_string('') + '_'
+        self.prefix = ''
         self.image_scale = (-1, 1)
 
     def clear(self):
@@ -132,16 +133,18 @@ class VizHandler():
 
         self.scatters[name] = (sc, labels)
 
-    def show(self):
+    def show(self, epoch):
         image_dir = self.output_dirs['image_dir']
         for i, (k, (im, labels)) in enumerate(self.images.items()):
             if image_dir:
                 logger.debug('Saving images to {}'.format(image_dir))
+                k_ = k.replace(' ', '_')
                 out_path = path.join(
-                    image_dir, '{}_{}_image.png'.format(self.prefix, k))
+                    image_dir, '{}{}_image_{}.png'.format(self.prefix, k_, epoch))
             else:
                 out_path = None
 
+            # TODO Expose num_x, num_y of images as viz option
             save_images(im, 8, 8, out_file=out_path, labels=labels,
                         max_samples=64, image_id=1 + i, caption=k)
 
@@ -155,8 +158,9 @@ class VizHandler():
 
             if image_dir:
                 logger.debug('Saving scatter to {}'.format(image_dir))
+                k_ = k.replace(' ', '_')
                 out_path = path.join(
-                    image_dir, '{}_{}_scatter.png'.format(self.prefix, k))
+                    image_dir, '{}{}_scatter_{}.png'.format(self.prefix, k_, epoch))
             else:
                 out_path = None
 
@@ -167,8 +171,9 @@ class VizHandler():
         for i, (k, hist) in enumerate(self.histograms.items()):
             if image_dir:
                 logger.debug('Saving histograms to {}'.format(image_dir))
+                k_ = k.replace(' ', '_')
                 out_path = path.join(
-                    image_dir, '{}_{}_histogram.png'.format(self.prefix, k))
+                    image_dir, '{}{}_histogram_{}.png'.format(self.prefix, k_, epoch))
             else:
                 out_path = None
             save_hist(hist, out_file=out_path, hist_id=i)
@@ -176,8 +181,9 @@ class VizHandler():
         for i, (k, hm) in enumerate(self.heatmaps.items()):
             if image_dir:
                 logger.debug('Saving heatmap to {}'.format(image_dir))
+                k_ = k.replace(' ', '_')
                 out_path = path.join(
-                    image_dir, '{}_{}_heatmap.png'.format(self.prefix, k))
+                    image_dir, '{}{}_heatmap_{}.png'.format(self.prefix, k_, epoch))
             else:
                 out_path = None
             save_heatmap(hm, out_file=out_path, image_id=i, title=k)
@@ -189,36 +195,35 @@ def plot(epoch, init=False):
     Takes the last value from the summary and appends this to the visdom plot.
 
     '''
-    def get_X_Y_legend(key, v_train, v_test):
+    if visualizer is None:
+        return
+
+    epoch -= 1
+
+    def get_X_Y_legend(key, label1, v_train, label2, v_test):
+        logger.debug("%s::\n%s : %s\n%s : %s",
+                     key, label1, v_train, label2, v_test)
+
         min_e = max(0, epoch - 1)
         if init:
             min_e = 0
+
         if min_e == epoch:
             Y = [[v_train[0], v_train[0]]]
+            X = [[-1, 0]]
         else:
             Y = [v_train[min_e:epoch + 1]]
-        legend = []
+            X = [range(min_e, epoch + 1)]
+        legend = ['{} ({})'.format(key, label1)]
 
         if v_test is not None:
             if min_e == epoch:
-                Y.append([v_test[0], v_test[0]])
+                Y += [[v_test[0], v_test[0]]]
+                X += [[-1, 0]]
             else:
-                Y.append(v_test[min_e:epoch + 1])
-
-            if min_e == epoch:
-                X = [[-1, 0], [-1, 0]]
-            else:
-                X = [range(min_e, epoch + 1), range(min_e, epoch + 1)]
-
-            legend.append('{} (train)'.format(key))
-            legend.append('{} (test)'.format(key))
-        else:
-            legend.append(key)
-
-            if min_e == epoch:
-                X = [[-1, 0]]
-            else:
-                X = [range(min_e, epoch + 1)]
+                Y += [v_test[min_e:epoch + 1]]
+                X += [range(min_e, epoch + 1)]
+            legend += ['{} ({})'.format(key, label2)]
 
         return X, Y, legend
 
@@ -226,52 +231,63 @@ def plot(epoch, init=False):
         try:
             return list(map(lambda x: x[0], list_of_stats)) if list_of_stats else None
         except TypeError:
-            list_of_stats
+            return list_of_stats
 
     train_summary = exp.SUMMARY['train']
+    train_keys = list(train_summary.keys())
+    valid_summary = exp.SUMMARY['validate']
+    #  valid_keys = list(valid_summary.keys())
     test_summary = exp.SUMMARY['test']
-    for k in train_summary.keys():
-        v_train = train_summary[k]
-        v_test = test_summary.get(k, None)
+    test_keys = list(test_summary.keys())
+    testing_plot_keys = list(set(test_keys) - set(train_keys))
 
-        if isinstance(v_train, dict):
-            Y = []
-            X = []
-            legend = []
-            for k_ in v_train:
-                vt = v_test.get(k_) if v_test is not None else None
-                X_, Y_, legend_ = get_X_Y_legend(k_,
-                                                 get_list_of_avg(v_train[k_]),
-                                                 get_list_of_avg(vt))
-                Y += Y_
-                X += X_
-                legend += legend_
-        else:
-            X, Y, legend = get_X_Y_legend(k,
-                                          get_list_of_avg(v_train),
-                                          get_list_of_avg(v_test))
+    plot_schemes = [
+        (train_keys, 'train', train_summary, 'test', test_summary),
+        (testing_plot_keys, 'test', test_summary, 'validation', valid_summary)
+        ]
+    for keys, label1, summary1, label2, summary2 in plot_schemes:
+        for k in keys:
+            v_t1 = summary1[k]
+            v_t2 = summary2.get(k, None)
 
-        opts = dict(
-            xlabel='epochs',
-            legend=legend,
-            ylabel=k,
-            title=k)
+            if isinstance(v_t1, dict):
+                Y = []
+                X = []
+                legend = []
+                for vk, vv_t1 in v_t1.items():
+                    vv_t2 = v_t2.get(vk) if v_t2 is not None else None
+                    X_, Y_, legend_ = get_X_Y_legend(vk,
+                                                     label1, get_list_of_avg(vv_t1),
+                                                     label2, get_list_of_avg(vv_t2))
+                    Y += Y_
+                    X += X_
+                    legend += legend_
+            else:
+                X, Y, legend = get_X_Y_legend(k,
+                                              label1, get_list_of_avg(v_t1),
+                                              label2, get_list_of_avg(v_t2))
 
-        X = np.array(X).transpose()
-        Y = np.array(Y).transpose()
+            opts = dict(
+                xlabel='epochs',
+                legend=legend,
+                ylabel=k,
+                title=k)
 
-        if init:
-            update = None
-        else:
-            update = 'append'
+            X = np.array(X).transpose()
+            Y = np.array(Y).transpose()
 
-        visualizer.line(
-            Y=Y,
-            X=X,
-            env=exp.NAME,
-            opts=opts,
-            win='line_{}'.format(k),
-            update=update)
+            if init:
+                update = None
+            else:
+                update = 'append'
+
+            visualizer.line(
+                Y=Y,
+                X=X,
+                env=exp.NAME,
+                opts=opts,
+                win='line_{}'.format(k),
+                update=update)
 
 
 def dequantize(images):
@@ -293,8 +309,10 @@ def save_text(labels, max_samples=64, out_file=None, text_id=0,
     l_ = [''.join([char_map[j] for j in label]) for label in labels]
 
     logger.info('{}: {}'.format(caption, l_[0]))
-    visualizer.text('\n'.join(l_), env=exp.NAME,
-                    win='text_{}'.format(text_id))
+
+    if visualizer:
+        visualizer.text('\n'.join(l_), env=exp.NAME,
+                        win='text_{}'.format(text_id))
 
     if out_file is not None:
         with open(out_file, 'w') as f:
@@ -379,22 +397,25 @@ def save_images(images, num_x, num_y, out_file=None, labels=None,  # noqa C901
     arr = np.array(im)
     if arr.ndim == 3:
         arr = arr.transpose(2, 0, 1)
-    visualizer.image(arr, opts=dict(title=title, caption=caption),
-                     win='image_{}'.format(image_id),
-                     env=exp.NAME)
+
+    if visualizer:
+        visualizer.image(arr, opts=dict(title=title, caption=caption),
+                         win='image_{}'.format(image_id),
+                         env=exp.NAME)
 
     if out_file:
         im.save(out_file)
 
 
 def save_heatmap(X, out_file=None, caption='', title='', image_id=0):
-    visualizer.heatmap(
-        X=X,
-        opts=dict(
-            title=title,
-            caption=caption),
-        win='heatmap_{}'.format(image_id),
-        env=exp.NAME)
+    if visualizer:
+        visualizer.heatmap(
+            X=X,
+            opts=dict(
+                title=title,
+                caption=caption),
+            win='heatmap_{}'.format(image_id),
+            env=exp.NAME)
 
 
 def save_scatter(points, out_file=None, labels=None, caption='', title='',
@@ -409,16 +430,17 @@ def save_scatter(points, out_file=None, labels=None, caption='', title='',
     if len(names) != max(Y):
         names = ['{}'.format(i + 1) for i in range(max(Y))]
 
-    visualizer.scatter(
-        X=points,
-        Y=Y,
-        opts=dict(
-            title=title,
-            caption=caption,
-            legend=names,
-            markersize=5),
-        win='scatter_{}'.format(image_id),
-        env=exp.NAME)
+    if visualizer:
+        visualizer.scatter(
+            X=points,
+            Y=Y,
+            opts=dict(
+                title=title,
+                caption=caption,
+                legend=names,
+                markersize=5),
+            win='scatter_{}'.format(image_id),
+            env=exp.NAME)
 
 
 def save_movie(images, num_x, num_y, out_file=None, movie_id=0):
@@ -438,23 +460,27 @@ def save_movie(images, num_x, num_y, out_file=None, movie_id=0):
             images_.append(image)
         imageio.mimsave(out_file, images_)
 
-    visualizer.video(videofile=out_file, env=exp.NAME,
-                     win='movie_{}'.format(movie_id))
+    if visualizer:
+        visualizer.video(videofile=out_file, env=exp.NAME,
+                         win='movie_{}'.format(movie_id))
 
 
 def save_hist(scores, out_file, hist_id=0):
     s = list(scores.values())
     bins = np.linspace(np.min(np.array(s)),
                        np.max(np.array(s)), 100)
-    plt.clf()
-    for k, v in scores.items():
-        plt.hist(v, bins, alpha=0.5, label=k)
-    plt.legend(loc='upper right')
+
     if out_file:
+        plt.clf()
+        for k, v in scores.items():
+            plt.hist(v, bins, alpha=0.5, label=k)
+        plt.legend(loc='upper right')
         plt.savefig(out_file)
-    hists = tuple(np.histogram(v, bins=bins)[0] for v in s)
-    X = np.column_stack(hists)
-    visualizer.stem(
-        X=X, Y=np.array([0.5 * (bins[i] + bins[i + 1]) for i in range(99)]),
-        opts=dict(legend=['Real', 'Fake']), win='hist_{}'.format(hist_id),
-        env=exp.NAME)
+
+    if visualizer:
+        hists = tuple(np.histogram(v, bins=bins)[0] for v in s)
+        X = np.column_stack(hists)
+        visualizer.stem(
+            X=X, Y=np.array([0.5 * (bins[i] + bins[i + 1]) for i in range(99)]),
+            opts=dict(legend=['Real', 'Fake']), win='hist_{}'.format(hist_id),
+            env=exp.NAME)

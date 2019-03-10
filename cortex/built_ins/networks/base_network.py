@@ -82,8 +82,10 @@ class BaseNet(nn.Module):
 
         Linear = Linear or nn.Linear
         if dim_out is not None:
-            name = 'linear_({}/{})_{}'.format(dim_in, dim_out, 'out')
-            self.models.add_module(name, Linear(dim_in, dim_out))
+            name = 'linear_({}/{})_{}'.format(dim_in, dim_out, 'final')
+            final_layer = Linear(dim_in, dim_out)
+            final_layer.name = 'final'
+            self.models.add_module(name, final_layer)
 
 
 def make_subnet(from_network, n_layers):

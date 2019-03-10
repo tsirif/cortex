@@ -4,14 +4,15 @@
 
 import copy
 import logging
+import pprint
 import time
 
-from . import data, exp, optimizer
-from .parsing import parse_docstring, parse_inputs, parse_kwargs
+from . import (data, exp, optimizer)
+from .parsing import (parse_docstring, parse_inputs, parse_kwargs)
 from .handlers import (aliased, prefixed,
                        NetworkHandler, LossHandler,
                        ResultsHandler, TunablesHandler)
-from .utils import (bad_values, update_dict_of_lists)
+from .utils import (bad_values, update_dict_of_lists, detach_nested)
 from .viz import VizHandler
 
 
@@ -102,9 +103,9 @@ class ModelPluginBase(metaclass=PluginType):
     TODO
     '''
 
-    _viz = VizHandler()
-    _data = data.DATA_HANDLER
-    _optimizers = optimizer.OPTIMIZERS
+    viz = VizHandler()
+    data = data.DATA_HANDLER
+    optimizers = optimizer.OPTIMIZERS
 
     _training_nets = dict()
     _all_nets = NetworkHandler(allow_overwrite=False)
@@ -128,6 +129,8 @@ class ModelPluginBase(metaclass=PluginType):
 
         self._contract = None
         self._train = False
+        self._has_init = False
+        self._parent_has_init = False
         self._models = []
         self.name = self.__class__.__name__
 
@@ -139,21 +142,16 @@ class ModelPluginBase(metaclass=PluginType):
         self._tunables = aliased(self._all_tunables,
                                  aliases=self.contract_kwargs)
         self._nets = aliased(self._all_nets, aliases=self.contract_nets)
-        self._losses = aliased(self._all_losses, aliases=self.contract_nets)
 
+        self._losses = aliased(self._all_losses, aliases=self.contract_nets)
         self._results = prefixed(self._all_results, prefix=self.name)
-        self._epoch_results = prefixed(
-            self._all_epoch_results, prefix=self.name)
-        self._epoch_losses = prefixed(
-            self._all_epoch_losses, prefix=self.name)
-        self._epoch_times = self._all_epoch_times
 
         self.wrap_functions()
 
     def wrap_functions(self):
         self._wrap_routine()
         self.visualize = self._wrap(self.visualize)
-        self.train_step = self._wrap_step(self.train_step)
+        self.train_step = self._wrap_step(self.train_step, train=True)
         self.autotune = self._wrap(self.autotune)
         self.eval_step = self._wrap_step(self.eval_step, train=False)
         self.train_loop = self._wrap_loop(self.train_loop, train=True)
@@ -266,12 +264,8 @@ class ModelPluginBase(metaclass=PluginType):
         return self._losses
 
     @property
-    def viz(self):
-        return self._viz
-
-    @property
-    def data(self):
-        return self._data
+    def is_training(self):
+        return self._train
 
     def _set_train(self):
         self._train = True
@@ -305,19 +299,16 @@ class ModelPluginBase(metaclass=PluginType):
             for k, v in kwargs.items():
                 if k not in self._kwargs or self._kwargs[k] is None:
                     self._kwargs[k] = copy.deepcopy(v)
-            self._all_tunables.share_global_kwargs(self.kwargs)
             for k, v in help.items():
                 if k not in self.help:
-                    self.help[k] = help[k]
+                    self.help[k] = v
+
             # Make total kwargs known to the tree of models with self as root
+            self._all_tunables.share_global_kwargs(self._kwargs)
             model._set_kwargs(self._kwargs)
 
             # Overwrite model's name by its usage
             model.name = key
-            model._epoch_results = prefixed(
-                model._all_epoch_results, prefix=model.name)
-            model._epoch_losses = prefixed(
-                self._all_epoch_losses, prefix=model.name)
             self._models.append(model)
 
         super().__setattr__(key, value)
@@ -441,79 +432,127 @@ class ModelPluginBase(metaclass=PluginType):
     def _wrap_routine(self):
         '''Wraps the routine.
 
-        Set to `requires_grad` for models that are trained with this routine.
+        Set to `requires_grad_()` for models that are trained with this routine.
 
         '''
 
         fn = self.routine
         fn = self._wrap(fn)
 
-        def wrapped(*args, **kwargs):
-            fid = self._get_id(fn)
+        def _isolate_routine_exec(*args, **kwargs):
+            # Create fresh handlers to isolate this routine's contributions
+            result_contributions = ResultsHandler()
+            self._results = prefixed(result_contributions, prefix=self.name)
 
+            loss_contributions = LossHandler(self._all_nets)
+            self._losses = aliased(loss_contributions,
+                                   aliases=self.contract_nets)
+
+            start = time.time()
+            output = fn(*args, **kwargs)
+            if output is not None:
+                try:
+                    self.results['output']
+                    logger.warning("%s routine returns not `None`, "
+                                   "but 'output' key already exists in routine's results. "
+                                   "Returned value will not be logged.",
+                                   self.name)
+                except KeyError:
+                    self.results.output = output
+            self._check_bad_values()
+            end = time.time()
+            duration = end - start
+
+            self._results = prefixed(self._all_results, prefix=self.name)
+            self._losses = aliased(self._all_losses, aliases=self.contract_nets)
+
+            return output, result_contributions, loss_contributions, duration
+
+        def wrapped(*args, **kwargs):
+            ##################################
+            #  Fetch networks to be trained  #
+            ##################################
+            fid = self._get_id(fn)
             training_nets = []
             if fid not in self._training_nets:
-                loss_contributions = LossHandler(self._all_nets)
-                self._losses = aliased(loss_contributions,
-                                       aliases=self.contract_nets)
-                result_contributions = ResultsHandler()
-                self._results = prefixed(result_contributions,
-                                         prefix=self.name)
-                fn(*args, **kwargs)
-                training_nets = []
-                for k in loss_contributions.keys():
-                    training_nets.append(k)
+                res = _isolate_routine_exec(*args, **kwargs)
+                output, result_contributions, loss_contributions, duration = res
+
+                training_nets = list(loss_contributions.keys())
                 self._training_nets[fid] = training_nets
             else:
                 training_nets = self._training_nets[fid]
 
-            for k, net in self.nets.items():
-                training = self._train and k in training_nets
-                #  net.train()
-                if training:
-                    optimizer = self._optimizers.get(k)
-                    if optimizer is not None:
+            logger.debug("Training nets found for '%s':\n  %s",
+                         self.name, training_nets)
+
+            ##################################################################
+            #  Logic so that a loss contrib is not added twice during train  #
+            ##################################################################
+            if self._train and not self._parent_has_init and not self._has_init:
+                self._parent_has_init = True
+                self._has_init = True
+                return output
+
+            if self._has_init:
+                # Force all immediate children models to contribute in order
+                # their loss, result and time contributions to the current
+                # step's total and log.
+                # Needed when switching a model in for the first time
+                # due to an autotune condition.
+                for m in self._models:
+                    m._parent_has_init = True
+
+            #################################################################
+            #  Execute routine with correct settings for training networks  #
+            #################################################################
+            if self._train or self._has_init:
+                for k, net in self._all_nets.items():
+                    optimizer = self.optimizers.get(k)
+                    training = self._train and k in training_nets and optimizer is not None
+                    logger.debug("Routine '%s' trains '%s': %s", self.name, k, str(training))
+                    if training:
                         optimizer.zero_grad()
-                for p in net.parameters():
-                    p.requires_grad_(training)
+                    for p in net.parameters():
+                        p.requires_grad_(training)
 
-            # Create fresh handlers to isolate this routine's contributions
-            loss_contributions = LossHandler(self._all_nets)
-            self._losses = aliased(loss_contributions,
-                                   aliases=self.contract_nets)
-            result_contributions = ResultsHandler()
-            self._results = prefixed(result_contributions, prefix=self.name)
+                res = _isolate_routine_exec(*args, **kwargs)
+                output, result_contributions, loss_contributions, duration = res
 
-            start = time.time()
-            output = fn(*args, **kwargs)
-            self._check_bad_values()
-            end = time.time()
+            self._has_init = True
 
-            # Append results with a prefixed key to epoch results list
+            ########################################
+            #  Contribute to loss and log results  #
+            ########################################
+            # Append result contributions with a prefixed key to epoch results list
+            logger.debug("Routine Results for '%s':", self.name)
             for k, v in result_contributions.items():
-                if isinstance(v, dict):  # TODO do for arbitrary nested stuff?
-                    v_ = dict((vk, vv.detach()) for vk, vv in v.items())
-                elif isinstance(v, (list, tuple)):
-                    v_ = type(v)(vv.detach() for vv in v)
-                else:
-                    v_ = v.detach()
+                logger.debug("    %s : %s", k, v)
+                v_ = detach_nested(v)
                 self._all_results[k] = v_
                 result_contributions[k] = v_
-            update_dict_of_lists(self._epoch_results, **self._results)
-            self._results = prefixed(self._all_results, prefix=self.name)
-
-            # Append routine times with a prefixed key to epoch times list
-            update_dict_of_lists(self._epoch_times,
-                                 **{self.name: end - start})
+            logger.debug("Total Step Results:\n%s",
+                         pprint.pformat(dict(self._all_results)))
+            update_dict_of_lists(self._all_epoch_results, **result_contributions)
 
             # Append loss contributions with a prefixed key to epoch losses list
-            losses = dict()
+            logger.debug("Routine Losses for '%s':", self.name)
             for k, v in loss_contributions.items():  # k here is unaliased name
-                losses[k] = v.detach()  # Losses are scalars only
-                self._all_losses[k] += v
+                logger.debug("    %s : %s", k, v)
+                if k == self.name:
+                    suffix = 'base_loss'
+                else:
+                    suffix = self.name
+                update_dict_of_lists(prefixed(self._all_epoch_losses, prefix=k),
+                                     **{suffix: v.detach()})
+                self._all_losses[k] = self._all_losses[k] + v
+            logger.debug("Total Step Losses:\n%s",
+                         pprint.pformat(dict(self._all_losses)))
             # unaliased name will be prefixed to show contribution
-            update_dict_of_lists(self._epoch_losses, **losses)
-            self._losses = aliased(self._all_losses, aliases=self.contract_nets)
+
+            # Append routine duration with a prefixed key to epoch times list
+            logger.debug("Routine Duration for '%s': %.2f", self.name, duration)
+            update_dict_of_lists(self._all_epoch_times, **{self.name: duration})
 
             return output
 
@@ -533,8 +572,8 @@ class ModelPluginBase(metaclass=PluginType):
 
         fn = self._wrap(fn)
 
-        def wrapped(*args, _init=False, **kwargs):
-            if train and not _init:
+        def wrapped(*args, **kwargs):
+            if train:
                 self._set_train()
                 for net in self.nets.values():
                     net.train()
@@ -544,6 +583,11 @@ class ModelPluginBase(metaclass=PluginType):
                     net.eval()
 
             output = fn(*args, **kwargs)
+
+            total_losses = {k + '_total_loss': v.detach()
+                            for k, v in self._all_losses.items()}
+            update_dict_of_lists(self._all_epoch_losses, **total_losses)
+
             self._all_losses.clear()
             self._all_results.clear()
 
@@ -580,8 +624,12 @@ class ModelPluginBase(metaclass=PluginType):
             results['losses'] = dict(self._all_epoch_losses)
             results['times'] = dict(self._all_epoch_times)
             if train:
-                results['validate'] = dict(self._all_validation)
-                results['tunables'] = dict(self._all_tunables)
+                all_valid = dict(self._all_validation)
+                if all_valid:
+                    results['validate'] = all_valid
+                all_tunables = dict(self._all_tunables)
+                if all_tunables:
+                    results['tunables'] = all_tunables
 
         return wrapped
 
@@ -603,20 +651,20 @@ class ModelPluginBase(metaclass=PluginType):
 
         '''
 
-        bads = bad_values(self.results)
+        bads = bad_values(self._results)
         if bads:
-            print(
-                'Bad values found in results (quitting): {} \n All:{}'.format(
-                    bads, self.results))
+            logger.critical(
+                'Bad values found in results (quitting): {}\nAll:{}'.format(
+                    bads, self._results))
             exit(0)
 
-        bads = bad_values(self.losses)
+        bads = bad_values(self._losses)
         if bads:
-            print(
-                'Bad values found in losses (quitting): {} \n All:{}'.format(
-                    bads, self.losses))
+            logger.critical(
+                'Bad values found in losses (quitting): {}\nAll:{}'.format(
+                    bads, self._losses))
             exit(0)
 
     def reload_nets(self, nets_to_reload):
         if nets_to_reload:
-            self.nets._handler.load(**nets_to_reload)
+            self._all_nets.reload(**nets_to_reload)

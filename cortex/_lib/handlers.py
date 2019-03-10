@@ -9,6 +9,7 @@ import torch
 
 from . import exp
 
+
 logger = logging.getLogger('cortex.handlers')
 
 
@@ -213,52 +214,27 @@ def prefixed(handler, prefix=None):
 
 class NetworkHandler(Handler):
     _type = torch.nn.Module
-    _get_error_string = 'Model `{}` not found. You must add ' \
-                        'it in `build_models` (as a dict entry).' \
+    _get_error_string = 'Network `{}` not found. You must register ' \
+                        'it in a `build` method of some model (as an attr of its nets).' \
                         ' Found: {}'
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._loaded = dict()
-
-    def load(self, **kwargs):
-        self._loaded.update(**kwargs)
-        self.update(**kwargs)
+    def reload(self, **kwargs):
+        for key, network in kwargs.items():
+            logger.info("Reloading '%s' network.", key)
+            try:
+                self[key]
+                self.__dict__[key].load_state_dict(network.state_dict())
+            except KeyError:
+                raise
 
     def __setitem__(self, key, value):
-        self._check_keyvalue(key, value)
-
-        if self._locked:
-            raise KeyError('Handler is locked.')
-
-        if not self._allow_overwrite and hasattr(self, key):
-            if key in self._loaded:
-                self.__dict__[key] = value
-                loaded = self._loaded[key]
-                self.__dict__[key].load_state_dict(loaded.state_dict())
-            else:
-                raise KeyError('Overwriting keys not allowed.')
-        else:
-            self.__dict__[key] = value
+        logger.debug("Registering '%s' network:\n%s", key, value)
+        super().__setitem__(key, value)
 
     def __setattr__(self, key, value):
-        if key.startswith('_'):
-            return MutableMapping.__setattr__(self, key, value)
-
-        self._check_keyvalue(key, value)
-
-        if self._locked:
-            raise KeyError('Handler is locked.')
-
-        if not self._allow_overwrite and hasattr(self, key):
-            if key in self._loaded:
-                MutableMapping.__setattr__(self, key, value)
-                loaded = self._loaded[key]
-                self.__dict__[key].load_state_dict(loaded.state_dict())
-            else:
-                raise KeyError('Overwriting keys not allowed.')
-        else:
-            MutableMapping.__setattr__(self, key, value)
+        if not key.startswith('_'):
+            logger.debug("Registering '%s' network:\n%s", key, value)
+        super().__setattr__(key, value)
 
 
 ResultsHandler = Handler
@@ -308,7 +284,7 @@ class LossHandler(Handler):
         super().__setattr__(key, value)
 
     def __missing__(self):
-        return torch.zeros([], device=exp.DEVICE)  # XXX
+        return torch.zeros([])
 
     def __getitem__(self, key):
         try:
@@ -325,32 +301,34 @@ class TunablesHandler(Handler):
     '''Simple dict-like container for tunable hyperparameters.'''
 
     _type = None
-    _get_error_string = 'Keyword `{}` not declared. Please check against function signatures.'
+    _get_error_string = 'kwarg `{}` not declared. Available: {}'
 
     def __init__(self, gkwargs=None, **kwargs):
-        self._global_kwargs = gkwargs or dict()
+        self._gkwargs = gkwargs or dict()
         super().__init__(**kwargs)
 
     def share_global_kwargs(self, gkwargs):
         """Share global kwargs object to complete functions' kwargs."""
-        self._global_kwargs = gkwargs
+        self._gkwargs = gkwargs
 
     def __setitem__(self, key, value):
         if not key.startswith('_'):
-            if key not in self._global_kwargs:
-                raise KeyError(self._get_error_string.format(key))
+            if key not in self._gkwargs:
+                raise KeyError(self._get_error_string.format(
+                    key, tuple(self._gkwargs.keys())))
             # Modify shared dictionary, so that changes take effect immediately
-            self._global_kwargs[key] = value
+            self._gkwargs[key] = value
             # Modify experiment's state, so that changes are resumable
             exp.ARGS['model'][key] = value
         super().__setitem__(key, value)
 
     def __setattr__(self, key, value):
         if not key.startswith('_'):
-            if key not in self._global_kwargs:
-                raise KeyError(self._get_error_string.format(key))
+            if key not in self._gkwargs:
+                raise KeyError(self._get_error_string.format(
+                    key, tuple(self._gkwargs.keys())))
             # Modify shared dictionary, so that changes take effect immediately
-            self._global_kwargs[key] = value
+            self._gkwargs[key] = value
             # Modify experiment's state, so that changes are resumable
             exp.ARGS['model'][key] = value
         super().__setattr__(key, value)

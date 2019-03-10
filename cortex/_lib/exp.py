@@ -26,7 +26,7 @@ NAME = 'X'
 SUMMARY = {'train': {}, 'test': {}}
 OUT_DIRS = {}
 ARGS = dict(data=dict(), model=dict(), optimizer=dict(), train=dict())
-INFO = {'name': NAME, 'epoch': 0, 'initial_seed': 'randomness'}
+INFO = {'name': NAME, 'epoch': 0, 'train_seed': 'randomness', 'test_seed': None}
 DEVICE = torch.device('cpu')
 
 
@@ -46,7 +46,7 @@ def configure_from_yaml(config_file=None):
         with open(config_file, 'r') as f:
             d = yaml.load(f)
         logger.info('Loading config {}'.format(d))
-        ARGS.get('model').update(**d.get('arch', {}))
+        ARGS.get('model').update(**d.get('model', {}))
         ARGS.get('optimizer').update(**d.get('optimizer', {}))
         ARGS.get('train').update(**d.get('train', {}))
         ARGS.get('data').update(**d.get('data', {}))
@@ -56,7 +56,6 @@ def reload_model(model_to_reload):
     if not path.isfile(model_to_reload):
         raise ValueError('Cannot find {}'.format(model_to_reload))
 
-    logger.info('Reloading from {} and creating backup'.format(model_to_reload))
     copyfile(model_to_reload, model_to_reload + '.bak')
 
     return torch.load(model_to_reload, map_location='cpu')
