@@ -13,6 +13,7 @@ from . import config, exp, log_utils, models
 from .parsing import default_args, parse_args, update_args
 from .random import (reseed, set_prgs_state)
 from .viz import init as viz_init
+from .utils import update_nested_dict
 
 __author__ = 'R Devon Hjelm'
 __author_email__ = 'erroneus@gmail.com'
@@ -58,16 +59,6 @@ def setup_experiment(args, model=None, testmode=False):
         args: TODO
 
     '''
-
-    def update_nested_dicts(from_d, to_d):
-        for k, v in from_d.items():
-            if (k in to_d) and isinstance(to_d[k], dict):
-                if not isinstance(v, dict):
-                    raise ValueError('Updating dict entry with non-dict.')
-                update_nested_dicts(v, to_d[k])
-            else:
-                to_d[k] = v
-
     exp.setup_device(args.device)
 
     if model is None:
@@ -112,7 +103,7 @@ def setup_experiment(args, model=None, testmode=False):
         exp.INFO.update(**d['info'])
         exp.NAME = exp.INFO['name']
         exp.SUMMARY.update(**d['summary'])
-        update_nested_dicts(d['args'], exp.ARGS)
+        update_nested_dict(exp.ARGS, d['args'], strict=True)
 
         if args.out_path or args.name:
             exp.setup_out_dir(args.out_path, config.CONFIG.out_path, exp.NAME,
@@ -146,7 +137,7 @@ def setup_experiment(args, model=None, testmode=False):
         exp.INFO['train_seed'] = args.seed
         exp.INFO['test_seed'] = args.test_seed
 
-    update_nested_dicts(exp.ARGS['model'], model.kwargs)
+    update_nested_dict(model.kwargs, exp.ARGS['model'], strict=True)
     exp.ARGS['model'].update(**model.kwargs)
 
     # Create local data directory, if not already there

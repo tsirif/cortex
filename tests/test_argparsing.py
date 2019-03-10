@@ -1,20 +1,7 @@
 from cortex._lib import (config, setup_experiment, exp)
 from cortex.built_ins.models.classifier import ImageClassification
 from cortex._lib.parsing import update_args
-
-
-def update_nested_dicts(from_d, to_d):
-    """
-    Copied from _lib/__init__::setup_experiment
-
-    """
-    for k, v in from_d.items():
-        if (k in to_d) and isinstance(to_d[k], dict):
-            if not isinstance(v, dict):
-                raise ValueError('Updating dict entry with non-dict.')
-            update_nested_dicts(v, to_d[k])
-        else:
-            to_d[k] = v
+from cortex._lib.utils import update_nested_dict
 
 
 def test_command_override_static(args):
@@ -56,7 +43,7 @@ def test_static_override_parameters(args, classifier_modified):
     assert exp.ARGS['model']['classifier_type'] == expected_type
 
 
-def test_update_nested_dicts(args, classifier_modified):
+def test_update_nested_dict(args, classifier_modified):
     """
 
     Args:
@@ -85,7 +72,7 @@ def test_update_nested_dicts(args, classifier_modified):
         args, model=classifier_modified, testmode=True)
     assert exp.ARGS['model'][
         'classifier_args'] == expected_classifier_args_before_update
-    update_nested_dicts(args_for_update, exp.ARGS)
+    update_nested_dict(exp.ARGS, args_for_update, strict=True)
     assert exp.ARGS['model'][
         'classifier_args'] == expected_classifier_args_after_update
     assert exp.ARGS['data']['batch_size'] == 122

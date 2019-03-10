@@ -333,7 +333,7 @@ class ModelPlugin(ModelPluginBase):
                 validation = summarize_results(results, with_std=False)
 
                 self._reset_epoch()
-                update_nested_dict(self._all_validation, **validation)
+                update_nested_dict(self._all_validation, validation)
 
                 if autotune_on is True:
                     logger.debug("AUTOTUNE STEP")

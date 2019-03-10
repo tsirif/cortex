@@ -48,7 +48,7 @@ def update_dict_of_lists(d_to_update, **d):
             d_to_update[k] = [v]
 
 
-def update_nested_dict(d_to_update, **d):
+def update_nested_dict(to_d, from_d, strict=False):
     """Updates a nested dictionary with kwargs.
 
     Args:
@@ -56,13 +56,15 @@ def update_nested_dict(d_to_update, **d):
         **d: keyword arguments to update.
 
     """
-    for k, v in d.items():
+    for k, v in from_d.items():
         if isinstance(v, dict):
-            if k not in d_to_update.keys():
-                d_to_update[k] = {}
-            update_nested_dict(d_to_update[k], **v)
+            if k not in to_d:
+                to_d[k] = {}
+            update_nested_dict(to_d[k], v)
         else:
-            d_to_update[k] = v
+            if strict and (k in to_d) and isinstance(to_d[k], dict):
+                raise ValueError('Updating dict entry with non-dict.')
+            to_d[k] = v
 
 
 def bad_values(d):
