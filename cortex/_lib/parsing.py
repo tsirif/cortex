@@ -88,10 +88,6 @@ optimizer_args = parse_kwargs(optimizer.setup)
 default_args = dict(data=data_args, optimizer=optimizer_args, train=train_args)
 default_help = dict(data=data_help, optimizer=optimizer_help, train=train_help)
 
-_protected_args = ['arch', 'out_path', 'name', 'reload',
-                   'args', 'copy_to_local', 'meta', 'config',
-                   'clean', 'verbosity', 'test', 'seed']
-
 logger = logging.getLogger('cortex.parsing')
 
 
