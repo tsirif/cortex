@@ -149,6 +149,10 @@ def make_argument_parser() -> argparse.ArgumentParser:
                         help="A string which will be used to fix the seed "
                              "used in experiment's testing PRGs. If `None`, "
                              "then model testing happens with the same PRGs as training.")
+    parser.add_argument('--fastdebug', type=int,
+                        help="If not None, run `while True` loops for this many "
+                             "in order to debug.")
+
     return parser
 
 

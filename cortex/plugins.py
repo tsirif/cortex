@@ -310,13 +310,18 @@ class ModelPlugin(ModelPluginBase):
                 logger.error("Found total loss for '{}' net, "
                              "but no corresponding optimizer...".format(k))
 
-    def train_loop(self, validate_batches=0, autotune_on=False):
+    def train_loop(self, validate_batches=0, autotune_on=False,
+                   fastdebug=None):
         """The training loop.
 
         This can be overridden to change the behavior of the training loop.
 
         Args:
-            eval_batches: Number of batches to be used for model validation.
+            validate_batches: Number of batches to be used for model validation.
+            autotune_on: If True, before each epoch try to autotune
+               based on validation results.
+            fastdebug: If integer, run `while True` loops for this many
+               in order to debug.
 
         """
         logger.debug("TRAINING LOOP")
@@ -339,34 +344,38 @@ class ModelPlugin(ModelPluginBase):
                     logger.debug("AUTOTUNE STEP")
                     self.autotune()
 
-            i = 0
             while True:
                 logger.debug("TRAINING STEP")
                 self.train_step()
-                i += 1
-                if i > 5:
-                    break
+                if fastdebug:
+                    fastdebug -= 1
+                    if fastdebug == 0:
+                        break
 
             self.data.finish_pbar()
 
         except StopIteration:
             pass
 
-    def eval_loop(self):
+    def eval_loop(self, fastdebug=None):
         """The evaluation loop.
 
         This can be overridden to change the behavior of the evaluation loop.
 
+        Args:
+            fastdebug: If integer, run `while True` loops for this many
+               in order to debug.
+
         """
         logger.debug("EVALUATION LOOP")
         try:
-            i = 0
             while True:
                 logger.debug("EVALUATION STEP")
                 self.eval_step()
-                i += 1
-                if i > 5:
-                    break
+                if fastdebug:
+                    fastdebug -= 1
+                    if fastdebug == 0:
+                        break
 
             self.data.finish_pbar()
 

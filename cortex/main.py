@@ -46,4 +46,4 @@ def run(model=None):
         exit(0)
 
     print_section('RUNNING')
-    train.main_loop(model, **exp.ARGS['train'])
+    train.main_loop(model, args.fastdebug, **exp.ARGS['train'])

@@ -20,9 +20,10 @@ logger = logging.getLogger('cortex.train')
 
 def train_epoch(model, epoch, full_eval_during_train, validate_batches=0,
                 autotune_on=False,
-                data_mode='train', use_pbar=True):
+                data_mode='train', use_pbar=True, fastdebug=None):
     model.train_loop(epoch, data_mode=data_mode, use_pbar=use_pbar,
-                     validate_batches=validate_batches, autotune_on=autotune_on)
+                     validate_batches=validate_batches, autotune_on=autotune_on,
+                     fastdebug=fastdebug)
 
     if full_eval_during_train:
         return eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar)
@@ -31,19 +32,22 @@ def train_epoch(model, epoch, full_eval_during_train, validate_batches=0,
     return convert_to_numpy(results)
 
 
-def eval_epoch(model, epoch, data_mode='train', use_pbar=True):
-    model.eval_loop(epoch, data_mode=data_mode, use_pbar=use_pbar)
+def eval_epoch(model, epoch, data_mode='train', use_pbar=True, fastdebug=None):
+    model.eval_loop(epoch, data_mode=data_mode, use_pbar=use_pbar,
+                    fastdebug=fastdebug)
     results = summarize_results(model._all_epoch_results)
     return convert_to_numpy(results)
 
 
-def test_epoch(model, epoch, data_mode='test', use_pbar=True, test_seed=None):
+def test_epoch(model, epoch, data_mode='test', use_pbar=True, test_seed=None,
+               fastdebug=None):
     train_prg_state = None
     if test_seed is not None:
         train_prg_state = random.get_prgs_state()
         random.reseed(test_seed)
 
-    results = eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar)
+    results = eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar,
+                         fastdebug=fastdebug)
 
     model.data.reset(make_pbar=False, mode='test')
     model.data.next()
@@ -183,7 +187,7 @@ def save_best(epoch, model, train_results, best, save_on_best, save_on_lowest):
                   RuntimeWarning)
 
 
-def main_loop(model, epochs=500, validate_batches=0, autotune_on=False,
+def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=False,
               archive_every=10, test_every=1,
               save_on_best=None, save_on_lowest=None, save_on_highest=None,
               full_eval_during_train=False,
@@ -220,7 +224,8 @@ def main_loop(model, epochs=500, validate_batches=0, autotune_on=False,
 
     if eval_only:
         test_results = test_epoch(model, 'Testing',
-                                  data_mode=test_mode, use_pbar=False)
+                                  data_mode=test_mode, use_pbar=False,
+                                  fastdebug=fastdebug)
         display_results(test_results, dict(), dict(),
                         'Evaluation', None, None, None)
         exit(0)
@@ -231,6 +236,11 @@ def main_loop(model, epochs=500, validate_batches=0, autotune_on=False,
     epoch = exp.INFO['epoch']
     first_epoch = epoch
     total_time = 0.
+
+    if fastdebug:
+        logger.warning("Overwriting `epochs` in order to fast debug for %d loops.",
+                       fastdebug)
+        epochs = epoch + fastdebug
 
     while epoch < epochs:
         try:
@@ -245,7 +255,8 @@ def main_loop(model, epochs=500, validate_batches=0, autotune_on=False,
             train_results_ = train_epoch(
                 model, epoch, full_eval_during_train,
                 validate_batches=validate_batches, autotune_on=autotune_on,
-                data_mode=train_mode, use_pbar=not(pbar_off))
+                data_mode=train_mode, use_pbar=not(pbar_off),
+                fastdebug=fastdebug)
 
             # SAVE IF BEST MODEL FOUND
             if save_on_best or save_on_highest or save_on_lowest:
@@ -269,7 +280,8 @@ def main_loop(model, epochs=500, validate_batches=0, autotune_on=False,
                     sys.stdout.flush()
                 test_results_ = test_epoch(model, epoch, data_mode=test_mode,
                                            use_pbar=not(pbar_off),
-                                           test_seed=exp.INFO.get('test_seed'))
+                                           test_seed=exp.INFO.get('test_seed'),
+                                           fastdebug=fastdebug)
                 update_dict_of_lists(exp.SUMMARY['test'], **test_results_)
                 if not pbar_off:
                     print('\n')
