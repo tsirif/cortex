@@ -267,15 +267,10 @@ class ModelPluginBase(metaclass=PluginType):
     def is_training(self):
         return self._train
 
-    def _set_train(self):
-        self._train = True
+    def _set_train(self, train=True):
+        self._train = train
         for m in self._models:
-            m._set_train()
-
-    def _set_eval(self):
-        self._train = False
-        for m in self._models:
-            m._set_eval()
+            m._set_train(train=train)
 
     def __setattr__(self, key, value):
         '''Sets an attribute for the model.
@@ -570,12 +565,16 @@ class ModelPluginBase(metaclass=PluginType):
 
         def wrapped(*args, **kwargs):
             if train:
-                self._set_train()
-                for net in self.nets.values():
-                    net.train()
+                self._set_train(True)
+                training_nets = self.all_training_nets
+                for k, net in self._all_nets.items():
+                    if k in training_nets:
+                        net.train()
+                    else:
+                        net.eval()
             else:
-                self._set_eval()
-                for net in self.nets.values():
+                self._set_train(False)
+                for net in self._all_nets.values():
                     net.eval()
 
             output = fn(*args, **kwargs)
@@ -629,14 +628,12 @@ class ModelPluginBase(metaclass=PluginType):
 
         return wrapped
 
-    def _get_training_nets(self):
-        '''Retrieves the training nets for the object.
-
-        '''
-
-        training_nets = []
+    @property
+    def all_training_nets(self):
+        '''Retrieves the training nets for the object.'''
+        training_nets = set()
         for v in self._training_nets.values():
-            training_nets += v
+            training_nets |= set(v)
 
         return training_nets
 

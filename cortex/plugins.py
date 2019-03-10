@@ -307,7 +307,7 @@ class ModelPlugin(ModelPluginBase):
                 loss.backward(retain_graph=(i < len(keys)))
                 optimizer.step()
             else:
-                logger.error("Found total loss for '{}' net, "
+                logger.debug("Found total loss for '{}' net, "
                              "but no corresponding optimizer...".format(k))
 
     def train_loop(self, validate_batches=0, autotune_on=False,

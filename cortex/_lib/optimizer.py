@@ -126,14 +126,17 @@ def setup(model, reload_states, optimizer='Adam', learning_rate=1.e-4,
 
     model._reset_epoch()
     model.data.reset(make_pbar=False, mode='train')
+    # First, no training nets are found, so run in eval and find them
+    model.train_step()
+    # Second, training nets are found, so warmup buffers (e.g. for BatchNorm)
     model.train_step()
     model.visualize(auto_input=True)
 
-    training_nets = model._get_training_nets()
+    training_nets = model.all_training_nets
 
-    logger.info("Setting up optimizers for:\n%s", set(training_nets))
+    logger.info("Setting up optimizers for:\n%s", training_nets)
 
-    for network_key in set(training_nets):
+    for network_key in training_nets:
         logger.debug("Building optimizer for '%s'", network_key)
         network = model.nets[network_key]
 
