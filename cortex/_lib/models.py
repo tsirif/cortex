@@ -483,7 +483,7 @@ class ModelPluginBase(metaclass=PluginType):
             else:
                 training_nets = self._training_nets[fid]
 
-            logger.debug("Training nets found for '%s':\n  %s",
+            logger.debug("Training nets found for '%s':\n%s",
                          self.name, training_nets)
 
             ##################################################################
@@ -531,8 +531,6 @@ class ModelPluginBase(metaclass=PluginType):
                 v_ = detach_nested(v)
                 self._all_results[k] = v_
                 result_contributions[k] = v_
-            logger.debug("Total Step Results:\n%s",
-                         pprint.pformat(dict(self._all_results)))
             update_dict_of_lists(self._all_epoch_results, **result_contributions)
 
             # Append loss contributions with a prefixed key to epoch losses list
@@ -546,8 +544,6 @@ class ModelPluginBase(metaclass=PluginType):
                 update_dict_of_lists(prefixed(self._all_epoch_losses, prefix=k),
                                      **{suffix: v.detach()})
                 self._all_losses[k] = self._all_losses[k] + v
-            logger.debug("Total Step Losses:\n%s",
-                         pprint.pformat(dict(self._all_losses)))
             # unaliased name will be prefixed to show contribution
 
             # Append routine duration with a prefixed key to epoch times list
@@ -654,15 +650,15 @@ class ModelPluginBase(metaclass=PluginType):
         bads = bad_values(self._results)
         if bads:
             logger.critical(
-                'Bad values found in results (quitting): {}\nAll:{}'.format(
-                    bads, self._results))
+                'Bad values found in results (quitting):\n%s\nAll:\n%s',
+                bads, self._results)
             exit(0)
 
         bads = bad_values(self._losses)
         if bads:
             logger.critical(
-                'Bad values found in losses (quitting): {}\nAll:{}'.format(
-                    bads, self._losses))
+                'Bad values found in losses (quitting):\n%s\nAll:\n%s',
+                bads, self._losses)
             exit(0)
 
     def reload_nets(self, nets_to_reload):

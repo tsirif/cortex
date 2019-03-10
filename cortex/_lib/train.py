@@ -249,7 +249,7 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
             # EPOCH INCREMENT
             exp.INFO['epoch'] += 1
             epoch = exp.INFO['epoch']
-            logger.info('Epoch {} / {}'.format(epoch, epochs))
+            logger.info('Epoch %d / %d', epoch, epochs)
 
             # TRAINING & VALIDATION
             train_results_ = train_epoch(

@@ -53,9 +53,9 @@ class DatasetPlugin(DatasetPluginBase):
         to_path = path.join(local_path, basename)
         if (not path.exists(to_path)) and path.exists(from_path):
 
-            logger.info('Copying dataset {} from {} to {} directory.... '
-                        '(This may take time)'
-                        .format(self.__class__.__name__, from_path, to_path))
+            logger.info("Copying dataset %s from '%s' to '%s' ... "
+                        "(This may take time)", self.__class__.__name__,
+                        from_path, to_path)
 
             if path.isdir(from_path):
                 shutil.copytree(from_path, to_path)

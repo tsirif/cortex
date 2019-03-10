@@ -48,7 +48,7 @@ def init(viz_config):
                        "Do you want to start it?"):
                 viz_bash_command = "python -m visdom.server"
                 viz_process = subprocess.Popen(viz_bash_command.split())
-                logger.info('Using visdom server at {}({})'.format(server, port))
+                logger.info("Using visdom server at %s(:%d)", server, port)
             else:
                 visualizer = None
     else:
@@ -98,36 +98,34 @@ class VizHandler():
         self.heatmaps = {}
 
     def add_image(self, im, name='image', labels=None):
+        if name in self.images:
+            logger.warning("'%s' has already been added to "
+                           "visualization. Change `name` kwarg", name)
         im = convert_to_numpy(im)
         mi, ma = self.image_scale
         im = (im - mi) / float(ma - mi)
         if labels is not None:
             labels = convert_to_numpy(labels)
-        if name in self.images:
-            logger.warning('{} already added to '
-                           'visualization. Use the name kwarg'
-                           .format(name))
         self.images[name] = (im, labels)
 
     def add_histogram(self, hist, name='histogram'):
         if name in self.histograms:
-            logger.warning('{} already added'
-                           ' to visualization.'
-                           ' Use the name kwarg'
-                           .format(name))
+            logger.warning("'%s' has already been added to "
+                           "visualization. Change `name` kwarg", name)
         hist = convert_to_numpy(hist)
         self.histograms[name] = hist
 
     def add_heatmap(self, hm, name='heatmap'):
         if name in self.heatmaps:
-            logger.warning('{} already'
-                           ' added to visualization.'
-                           ' Use the name kwarg'
-                           .format(name))
+            logger.warning("'%s' has already been added to "
+                           "visualization. Change `name` kwarg", name)
         hm = convert_to_numpy(hm)
         self.heatmaps[name] = hm
 
     def add_scatter(self, sc, labels=None, name='scatter'):
+        if name in self.scatters:
+            logger.warning("'%s' has already been added to "
+                           "visualization. Change `name` kwarg", name)
         sc = convert_to_numpy(sc)
         labels = convert_to_numpy(labels)
 
@@ -137,7 +135,7 @@ class VizHandler():
         image_dir = self.output_dirs['image_dir']
         for i, (k, (im, labels)) in enumerate(self.images.items()):
             if image_dir:
-                logger.debug('Saving images to {}'.format(image_dir))
+                logger.debug("Saving images to: %s", image_dir)
                 k_ = k.replace(' ', '_')
                 out_path = path.join(
                     image_dir, '{}{}_image_{}.png'.format(self.prefix, k_, epoch))
@@ -157,7 +155,7 @@ class VizHandler():
                 sc = compute_tsne(sc)
 
             if image_dir:
-                logger.debug('Saving scatter to {}'.format(image_dir))
+                logger.debug("Saving scatter to: %s", image_dir)
                 k_ = k.replace(' ', '_')
                 out_path = path.join(
                     image_dir, '{}{}_scatter_{}.png'.format(self.prefix, k_, epoch))
@@ -170,7 +168,7 @@ class VizHandler():
 
         for i, (k, hist) in enumerate(self.histograms.items()):
             if image_dir:
-                logger.debug('Saving histograms to {}'.format(image_dir))
+                logger.debug("Saving histograms to: %s", image_dir)
                 k_ = k.replace(' ', '_')
                 out_path = path.join(
                     image_dir, '{}{}_histogram_{}.png'.format(self.prefix, k_, epoch))
@@ -180,7 +178,7 @@ class VizHandler():
 
         for i, (k, hm) in enumerate(self.heatmaps.items()):
             if image_dir:
-                logger.debug('Saving heatmap to {}'.format(image_dir))
+                logger.debug("Saving heatmaps to: %s", image_dir)
                 k_ = k.replace(' ', '_')
                 out_path = path.join(
                     image_dir, '{}{}_heatmap_{}.png'.format(self.prefix, k_, epoch))
@@ -308,7 +306,7 @@ def save_text(labels, max_samples=64, out_file=None, text_id=0,
     char_map = _options['label_names']
     l_ = [''.join([char_map[j] for j in label]) for label in labels]
 
-    logger.info('{}: {}'.format(caption, l_[0]))
+    logger.debug('%s: %s', caption, l_[0])
 
     if visualizer:
         visualizer.text('\n'.join(l_), env=exp.NAME,

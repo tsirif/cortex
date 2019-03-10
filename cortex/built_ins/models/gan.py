@@ -408,7 +408,7 @@ class GeneratorEvaluator(ModelPlugin):
 
         self.tf_device_name = self._get_tf_device()
         inception_path = inception_path or self._default_inception_tar_filename()
-        logger.info("GeneratorEvaluator. inception_v1 path: {}".format(inception_path))
+        logger.info("GeneratorEvaluator. inception_v1 path: %s", inception_path)
         with self.tf.device(self.tf_device_name):
             self.inception_graph = self._get_inception_graph(inception_path)
 

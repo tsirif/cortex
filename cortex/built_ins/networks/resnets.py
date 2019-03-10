@@ -203,7 +203,7 @@ class ResDecoder(nn.Module):
         super(ResDecoder, self).__init__()
         models = nn.Sequential()
 
-        logger.debug('Building ResDecoder. Output shape: {}'.format(shape))
+        logger.debug('Building ResDecoder. Output shape: %s', shape)
         dim_x_, dim_y_, dim_out_ = shape
         dim_h_ = dim_h
 
@@ -277,7 +277,7 @@ class ResEncoder(BaseNet):
         if isinstance(fully_connected_layers, int):
             fully_connected_layers = [fully_connected_layers]
 
-        logger.debug('Building ResEncoder. Input shape: {}'.format(shape))
+        logger.debug('Building ResEncoder. Input shape: %s', shape)
         dim_x_, dim_y_, dim_in_ = shape
         dim_h_ = dim_h
         dim_out_ = dim_out

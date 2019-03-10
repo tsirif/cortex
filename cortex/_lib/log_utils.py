@@ -44,8 +44,8 @@ def set_stream_logger(verbosity):
     ch = logging.StreamHandler()
     ch.setFormatter(logging.Formatter(stream_format))
     logger.addHandler(ch)
-    logger.info('Setting cortex logging to %s' % lstr)
-    logger.info('Setting root logging to %s' % rlstr)
+    logger.info('Setting cortex logging to: %s', lstr)
+    logger.info('Setting root logging to: %s', rlstr)
 
 
 def set_file_logger(file_path):

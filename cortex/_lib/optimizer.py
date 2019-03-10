@@ -131,10 +131,10 @@ def setup(model, reload_states, optimizer='Adam', learning_rate=1.e-4,
 
     training_nets = model._get_training_nets()
 
-    logger.info('Setting up optimizers for {}'.format(set(training_nets)))
+    logger.info("Setting up optimizers for:\n%s", set(training_nets))
 
     for network_key in set(training_nets):
-        logger.debug('Building optimizer for {}'.format(network_key))
+        logger.debug("Building optimizer for '%s'", network_key)
         network = model.nets[network_key]
 
         if isinstance(network, (tuple, list)):
@@ -182,9 +182,7 @@ def setup(model, reload_states, optimizer='Adam', learning_rate=1.e-4,
 
         OPTIMIZERS[network_key] = optimizer
 
-        logger.debug(
-            'Training {} routine with {}'.format(
-                network_key, optimizer))
+        logger.debug("Training '%s' routine with:\n%s", network_key, optimizer)
 
     if not exp.DEVICE == torch.device('cpu'):
         cudnn.benchmark = True

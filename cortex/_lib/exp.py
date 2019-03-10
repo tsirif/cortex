@@ -45,7 +45,7 @@ def configure_from_yaml(config_file=None):
     if config_file is not None:
         with open(config_file, 'r') as f:
             d = yaml.load(f)
-        logger.info('Loading config {}'.format(d))
+        logger.info('Loading config:\n%s', d)
         ARGS.get('model').update(**d.get('model', {}))
         ARGS.get('optimizer').update(**d.get('optimizer', {}))
         ARGS.get('train').update(**d.get('train', {}))
@@ -85,7 +85,7 @@ def save(model, prefix=''):
     )
 
     file_path = path.join(binary_dir, '{}.t7'.format(prefix))
-    logger.info('Saving checkpoint {}'.format(file_path))
+    logger.info('Saving checkpoint: %s', file_path)
     torch.save(state, file_path)
 
 
@@ -109,7 +109,7 @@ def setup_out_dir(out_path, global_out_path, name=None, clean=False):
         out_path = path.join(out_path, name)
 
     if not path.isdir(out_path):
-        logger.info('Creating out path `{}`'.format(out_path))
+        logger.info('Creating out path: %s', out_path)
         os.mkdir(out_path)
 
     binary_dir = path.join(out_path, 'binaries')
@@ -127,9 +127,10 @@ def setup_out_dir(out_path, global_out_path, name=None, clean=False):
     if not path.isdir(image_dir):
         os.mkdir(image_dir)
 
-    logger.info('Setting out path to `{}`'.format(out_path))
-    logger.info('Logging to `{}`'.format(path.join(out_path, 'out.log')))
-    set_file_logger(path.join(out_path, 'out.log'))
+    logger.info('Setting out path to: %s', out_path)
+    logpath = path.join(out_path, 'out.log')
+    logger.info('Logging to: %s', logpath)
+    set_file_logger(logpath)
 
     OUT_DIRS.update(binary_dir=binary_dir, image_dir=image_dir)
 
@@ -138,9 +139,9 @@ def setup_device(device):
     global DEVICE
     if torch.cuda.is_available() and device != 'cpu':
         if device < torch.cuda.device_count():
-            logger.info('Using GPU {}'.format(device))
+            logger.info('Using CUDA device %d', device)
             DEVICE = torch.device('cuda', int(device))
         else:
-            logger.info('GPU {} doesn\'t exists. Using CPU'.format(device))
+            logger.info('CUDA device %d doesn\'t exists. Using CPU', device)
     else:
         logger.info('Using CPU')
