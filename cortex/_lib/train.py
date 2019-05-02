@@ -189,7 +189,7 @@ def save_best(epoch, model, train_results, best, save_on_best, save_on_lowest):
 
 def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=False,
               archive_every=10, test_every=1,
-              save_on_best=None, save_on_lowest=None, save_on_highest=None,
+              save_on_best=None, save_on_lowest=False, save_on_highest=False,
               full_eval_during_train=False,
               train_mode='train', test_mode='test', eval_only=False,
               pbar_off=False):
@@ -258,17 +258,17 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
                 data_mode=train_mode, use_pbar=not(pbar_off),
                 fastdebug=fastdebug)
 
-            # SAVE IF BEST MODEL FOUND
-            if save_on_best or save_on_highest or save_on_lowest:
-                best = save_best(epoch, model, train_results_,
-                                 best, save_on_best, save_on_lowest)
-
             # TRAINING AND VALIDATION SUMMARY
             valid_results_ = train_results_.pop('validate', dict())
             update_dict_of_lists(exp.SUMMARY['train'], **train_results_)
             if 'validate' not in exp.SUMMARY:  # XXX
                 exp.SUMMARY['validate'] = dict()
             update_dict_of_lists(exp.SUMMARY['validate'], **valid_results_)
+
+            # SAVE IF BEST MODEL FOUND
+            if save_on_best or save_on_highest or save_on_lowest:
+                best = save_best(epoch, model, valid_results_,
+                                 best, save_on_best, save_on_lowest)
 
             # TESTING
             is_testing_epoch = (test_every and (epoch - 1) % test_every == 0) or \

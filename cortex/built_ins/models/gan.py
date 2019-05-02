@@ -415,7 +415,7 @@ class GeneratorEvaluator(ModelPlugin):
     def routine(self, reals, fakes,
                 use_inception_score=False,
                 use_fid=False,
-                use_kid=False, btest_splits=8,
+                use_kid=False, kid_splits=1,
                 inception_batch_size=None,
                 use_ms_ssim=False,
                 mock_GE=False):
@@ -424,7 +424,7 @@ class GeneratorEvaluator(ModelPlugin):
                 use_inception_score: True, to calculate inception score (IS).
                 use_fid: True, to calculcate Frechet inception distance (FID).
                 use_kid: True, to calculate kernel inception distance (KID).
-                btest_splits: Number of splits to block estimate MMD in KID.
+                kid_splits: Number of splits to block estimate MMD in KID.
                 inception_batch_size: Batch size to calculate inception activations with.
                 use_ms_ssim: True, to calculate multi-scale structure similarity.
                 mock_GE: True, to return mock values (DEBUGGING).
@@ -485,13 +485,14 @@ class GeneratorEvaluator(ModelPlugin):
                     # Split data into 8 blocks and calculate estimations of KID and its std
                     kid_fn = self.tfgan.kernel_classifier_distance_and_std_from_activations
                     kid_fn = functools.partial(kid_fn,
-                                               max_block_size=math.ceil(fakes_len / btest_splits))
+                                               max_block_size=math.ceil(fakes_len / kid_splits))
                     kid_mean, kid_std = kid_fn(real_a, gen_a)
                     eval_scores['KID'] = kid_mean
-                    # FIXME: This patches a bug in the calculation of KID's std by tfgan
-                    # Remove when it is corrected
-                    kid_var = btest_splits * self.math_ops.square(kid_std)
-                    eval_scores['KID_std'] = self.math_ops.sqrt(kid_var)
+                    if kid_splits > 1:
+                        # FIXME: This patches a bug in the calculation of KID's std by tfgan
+                        # Remove when it is corrected
+                        kid_var = kid_splits * self.math_ops.square(kid_std)
+                        eval_scores['KID_std'] = self.math_ops.sqrt(kid_var)
 
         if use_ms_ssim:
             with self.tf.device(self.tf_device_name):
