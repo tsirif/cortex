@@ -152,6 +152,8 @@ def make_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument('--fastdebug', type=int,
                         help="If not None, run `while True` loops for this many "
                              "in order to debug.")
+    parser.add_argument('-V', '--viz', default=False, action='store_true',
+                        help='Enable visualization.')
 
     return parser
 

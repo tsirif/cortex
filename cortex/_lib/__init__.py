@@ -73,7 +73,7 @@ def setup_experiment(args, model=None, testmode=False):
     exp.configure_from_yaml(config_file=config.DEFAULT_LOCATION)
     exp.configure_from_yaml(config_file=args.config)
 
-    if not testmode:
+    if not testmode and args.viz:
         viz_init(config.CONFIG.viz)
 
     for k, v in vars(args).items():
