@@ -136,24 +136,24 @@ class TorchvisionDatasetPlugin(DatasetPlugin):
                                       stl_resize_only=stl_resize_only,
                                       stl_no_resize=stl_no_resize)
         if train_samples is not None:
-            train_set.train_data = train_set.train_data[:train_samples]
-            train_set.train_labels = train_set.train_labels[:train_samples]
+            train_set.data = train_set.data[:train_samples]
+            train_set.targets = train_set.targets[:train_samples]
         if test_samples is not None:
-            test_set.test_data = test_set.test_data[:test_samples]
-            test_set.test_labels = test_set.test_labels[:test_samples]
+            test_set.data = test_set.data[:test_samples]
+            test_set.targets = test_set.targets[:test_samples]
 
         if source in ('SVHN', 'STL10'):
-            dim_c, dim_x, dim_y = train_set[0][0].size()
-            uniques = np.unique(train_set.labels).tolist()
+            dim_x, dim_y, dim_c = train_set[0][0].size()
+            uniques = np.unique(train_set.targets).tolist()
             try:
                 uniques.remove(-1)
             except ValueError:
                 pass
             dim_l = len(uniques)
         else:
-            dim_c, dim_x, dim_y = train_set[0][0].size()
+            dim_x, dim_y, dim_c = train_set[0][0].size()
 
-            labels = train_set.train_labels
+            labels = train_set.targets
             if not isinstance(labels, list):
                 labels = labels.numpy()
             dim_l = len(np.unique(labels))
