@@ -138,9 +138,10 @@ def setup_out_dir(out_path, global_out_path, name=None, clean=False):
 def setup_device(device):
     global DEVICE
     if torch.cuda.is_available() and device != 'cpu':
+        device = int(device)
         if device < torch.cuda.device_count():
             logger.info('Using CUDA device %d', device)
-            DEVICE = torch.device('cuda', int(device))
+            DEVICE = torch.device('cuda', device)
         else:
             logger.info('CUDA device %d doesn\'t exists. Using CPU', device)
     else:
