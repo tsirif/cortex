@@ -110,7 +110,7 @@ def setup_out_dir(out_path, global_out_path, name=None, clean=False):
 
     if not path.isdir(out_path):
         logger.info('Creating out path: %s', out_path)
-        os.mkdir(out_path)
+        os.makedirs(out_path, exist_ok=True)
 
     binary_dir = path.join(out_path, 'binaries')
     image_dir = path.join(out_path, 'images')
