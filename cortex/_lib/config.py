@@ -43,7 +43,7 @@ def set_config():
 
     logger.debug('Open config file {}'.format(config_file))
     with open(config_file, 'r') as f:
-        d = yaml.load(f)
+        d = yaml.safe_load(f)
         logger.debug('User-defined configs: {}'.format(pprint.pformat(d)))
 
         viz = d.get('viz', {})
@@ -174,7 +174,7 @@ def setup_config_file(config_file):
 
     if isfile:
         with open(config_file, 'r') as f:
-            d = yaml.load(f)
+            d = yaml.safe_load(f)
     else:
         d = dict(data_paths={}, viz={}, out_path=None)
 
