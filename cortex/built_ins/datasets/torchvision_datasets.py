@@ -143,7 +143,7 @@ class TorchvisionDatasetPlugin(DatasetPlugin):
             test_set.targets = test_set.targets[:test_samples]
 
         if source in ('SVHN', 'STL10'):
-            dim_x, dim_y, dim_c = train_set[0][0].size()
+            dim_c, dim_x, dim_y = train_set[0][0].size()
             uniques = np.unique(train_set.targets).tolist()
             try:
                 uniques.remove(-1)
@@ -151,7 +151,7 @@ class TorchvisionDatasetPlugin(DatasetPlugin):
                 pass
             dim_l = len(uniques)
         else:
-            dim_x, dim_y, dim_c = train_set[0][0].size()
+            dim_c, dim_x, dim_y = train_set[0][0].size()
 
             labels = train_set.targets
             if not isinstance(labels, list):
