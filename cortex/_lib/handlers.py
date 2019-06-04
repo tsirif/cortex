@@ -284,7 +284,7 @@ class LossHandler(Handler):
         super().__setattr__(key, value)
 
     def __missing__(self):
-        return torch.zeros([])
+        return torch.zeros([], device=exp.DEVICE)
 
     def __getitem__(self, key):
         try:
