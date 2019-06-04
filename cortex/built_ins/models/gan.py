@@ -430,7 +430,6 @@ class GeneratorEvaluator(ModelPlugin):
                 mock_GE: True, to return mock values (DEBUGGING).
 
         """
-        # TODO Verify that this plugin works correctly!!!
         # NOTE: `reals` should not have any meaningful sorting in order to
         #       calculate a correct estimation of Kernel Inception Distance.
         if not any((use_inception_score, use_fid, use_kid, use_ms_ssim)):
@@ -459,58 +458,55 @@ class GeneratorEvaluator(ModelPlugin):
         fakes_np = fakes.numpy()
 
         if any((use_inception_score, use_fid, use_kid)):
-            with self.tf.device(self.tf_device_name):
-                output_tensor = []
-                output_tensor += [self.INCEPTION_FINAL_POOL] if use_fid or use_kid else []
-                output_tensor += [self.INCEPTION_OUTPUT] if use_inception_score else []
+            output_tensor = []
+            output_tensor += [self.INCEPTION_FINAL_POOL] if use_fid or use_kid else []
+            output_tensor += [self.INCEPTION_OUTPUT] if use_inception_score else []
 
-                acts = self.precalc_inception_activations(reals_np if use_fid or use_kid else None,
-                                                          fakes_np,
-                                                          output_tensor, self.inception_graph,
-                                                          inception_batch_size or self.data.batch_size['test'])
-                real_a, real_l, gen_a, gen_l = acts
+            acts = self.precalc_inception_activations(reals_np if use_fid or use_kid else None,
+                                                        fakes_np,
+                                                        output_tensor, self.inception_graph,
+                                                        inception_batch_size or self.data.batch_size['test'])
+            real_a, real_l, gen_a, gen_l = acts
 
-                if use_inception_score:
-                    is_fn = self.tfgan.classifier_score_from_logits
-                    score = is_fn(gen_l)
-                    eval_scores['IS'] = score
+            if use_inception_score:
+                is_fn = self.tfgan.classifier_score_from_logits
+                score = is_fn(gen_l)
+                eval_scores['IS'] = score
 
-                if use_fid:
-                    # TODO perhaps use a hyperparameter to select available variant
-                    fid_fn = self.tfgan.frechet_classifier_distance_from_activations
-                    fid = fid_fn(real_a, gen_a)
-                    eval_scores['FID'] = fid
+            if use_fid:
+                # TODO perhaps use a hyperparameter to select available variant
+                fid_fn = self.tfgan.frechet_classifier_distance_from_activations
+                fid = fid_fn(real_a, gen_a)
+                eval_scores['FID'] = fid
 
-                if use_kid:
-                    # Split data into 8 blocks and calculate estimations of KID and its std
-                    kid_fn = self.tfgan.kernel_classifier_distance_and_std_from_activations
-                    kid_fn = functools.partial(kid_fn,
-                                               max_block_size=math.ceil(fakes_len / kid_splits))
-                    kid_mean, kid_std = kid_fn(real_a, gen_a)
-                    eval_scores['KID'] = kid_mean
-                    if kid_splits > 1:
-                        # FIXME: This patches a bug in the calculation of KID's std by tfgan
-                        # Remove when it is corrected
-                        kid_var = kid_splits * self.math_ops.square(kid_std)
-                        eval_scores['KID_std'] = self.math_ops.sqrt(kid_var)
+            if use_kid:
+                # Split data into 8 blocks and calculate estimations of KID and its std
+                kid_fn = self.tfgan.kernel_classifier_distance_and_std_from_activations
+                kid_fn = functools.partial(kid_fn,
+                                           max_block_size=math.ceil(fakes_len / kid_splits))
+                kid_mean, kid_std = kid_fn(real_a, gen_a)
+                eval_scores['KID'] = kid_mean
+                if kid_splits > 1:
+                    # FIXME: This patches a bug in the calculation of KID's std by tfgan
+                    # Remove when it is corrected
+                    kid_var = kid_splits * self.math_ops.square(kid_std)
+                    eval_scores['KID_std'] = self.math_ops.sqrt(kid_var)
 
         if use_ms_ssim:
-            with self.tf.device(self.tf_device_name):
-                ms_ssims = self.calc_ms_ssim(fakes_np, reals_np,
-                                             batch_size=self.data.batch_size['test'])
-                assert(self.array_ops.rank(ms_ssims) == 1)  # XXX
-                assert(self.array_ops.shape(ms_ssims)[0] == reals_len)
-                mn = self.math_ops.reduce_mean(ms_ssims)
-                var = self.math_ops.square(ms_ssims - mn) / (reals_len - 1)
-                std = self.math_ops.sqrt(var)
-                eval_scores['MS_SSIM'] = mn
-                eval_scores['MS_SSIM_std'] = std
+            ms_ssims = self.calc_ms_ssim(fakes_np, reals_np,
+                                            batch_size=self.data.batch_size['test'])
+            assert(self.array_ops.rank(ms_ssims) == 1)  # XXX
+            assert(self.array_ops.shape(ms_ssims)[0] == reals_len)
+            mn = self.math_ops.reduce_mean(ms_ssims)
+            var = self.math_ops.square(ms_ssims - mn) / (reals_len - 1)
+            std = self.math_ops.sqrt(var)
+            eval_scores['MS_SSIM'] = mn
+            eval_scores['MS_SSIM_std'] = std
 
         # Execute collected scores
-        with self.tf.device(self.tf_device_name):
-            sess = self.tf.Session()
-            with sess.as_default():
-                eval_scores = sess.run(eval_scores)
+        sess = self.tf.Session()
+        with sess.as_default():
+            eval_scores = sess.run(eval_scores)
 
         # Log scores
         for key, value in eval_scores.items():
