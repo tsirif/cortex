@@ -1,5 +1,6 @@
 """Data module"""
 
+import logging
 import signal
 
 import torch
@@ -10,6 +11,8 @@ from .. import exp
 
 __author__ = 'R Devon Hjelm'
 __author_email__ = 'erroneus@gmail.com'
+
+logger = logging.getLogger('cortex.data')
 
 
 class DataHandler:
@@ -62,6 +65,8 @@ class DataHandler:
                                     worker_init_fn=lambda x:
                                     signal.signal(signal.SIGINT,
                                                   signal.SIG_IGN))
+            logger.debug("Registering loader '%s' (bs: %d) with %d data points",
+                         k, batch_size, len(dataset))
 
         self.dims[source] = dataset_entrypoint._dims
         self.input_names[source] = dataset_entrypoint._input_names
