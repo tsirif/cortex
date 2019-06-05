@@ -389,12 +389,46 @@ class GeneratorEvaluator(ModelPlugin):
             self.INCEPTION_URL, self.INCEPTION_FROZEN_GRAPH,
             os.path.abspath(tar_filename))
 
-    def build(self, inception_path=None):
+    def build(self, inception_path=None,
+              use_inception_score=False, use_fid=False,
+              use_kid=False, kid_splits=1,
+              num_inception_batches=32,
+              use_ms_ssim=False, mock_GE=False):
         """
             Args:
                 inception_path: Contains the persistent path to frozen inception_v1.
+                use_inception_score: True, to calculate inception score (IS).
+                use_fid: True, to calculcate Frechet inception distance (FID).
+                use_kid: True, to calculate kernel inception distance (KID).
+                kid_splits: Number of splits to block estimate MMD in KID.
+                num_inception_batches: Batch size to calculate inception activations with.
+                use_ms_ssim: True, to calculate multi-scale structure similarity.
+                mock_GE: True, to return mock values (DEBUGGING).
 
         """
+        if not any((use_inception_score, use_fid, use_kid, use_ms_ssim)):
+            self.eval_scores = None
+            return
+
+        if mock_GE:
+            def mock_eval_scores(reals, fakes):
+                eval_scores = {}
+                if use_inception_score:
+                    eval_scores['IS'] = 3.
+                if use_fid:
+                    eval_scores['FID'] = 0.4
+                if use_kid:
+                    eval_scores['KID'] = 0.4
+                    eval_scores['KID_std'] = 0.1
+                if use_ms_ssim:
+                    eval_scores['MS_SSIM'] = 3
+                    eval_scores['MS_SSIM_std'] = 0.5
+                return eval_scores
+
+            self.eval_scores = mock_eval_scores
+            return
+
+        # Prepare Tensorflow
         logger.info("GeneratorEvaluator. importing tensorflow...")
         import tensorflow as tf
         self.tf = tf
@@ -406,66 +440,40 @@ class GeneratorEvaluator(ModelPlugin):
         self.math_ops = math_ops
         self.tfgan = tf.contrib.gan.eval
 
-        self.tf_device_name = self._get_tf_device()
+        #  self.tf_device_name = self._get_tf_device()
         inception_path = inception_path or self._default_inception_tar_filename()
         logger.info("GeneratorEvaluator. inception_v1 path: %s", inception_path)
-        with self.tf.device(self.tf_device_name):
-            self.inception_graph = self._get_inception_graph(inception_path)
 
-    def routine(self, reals, fakes,
-                use_inception_score=False,
-                use_fid=False,
-                use_kid=False, kid_splits=1,
-                inception_batch_size=None,
-                use_ms_ssim=False,
-                mock_GE=False):
-        """
-            Args:
-                use_inception_score: True, to calculate inception score (IS).
-                use_fid: True, to calculcate Frechet inception distance (FID).
-                use_kid: True, to calculate kernel inception distance (KID).
-                kid_splits: Number of splits to block estimate MMD in KID.
-                inception_batch_size: Batch size to calculate inception activations with.
-                use_ms_ssim: True, to calculate multi-scale structure similarity.
-                mock_GE: True, to return mock values (DEBUGGING).
+        config = tf.ConfigProto(log_device_placement=False, allow_soft_placement=True)
+        config.gpu_options.allow_growth = True
+        self.tf_session = tf.Session(config=config)
+        #  self.tf_run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 
-        """
-        # NOTE: `reals` should not have any meaningful sorting in order to
-        #       calculate a correct estimation of Kernel Inception Distance.
-        if not any((use_inception_score, use_fid, use_kid, use_ms_ssim)):
-            return
+        # Define graph inputs
+        reals_np = tf.placeholder(tf.float32, shape=(None, 3, None, None))
+        fakes_np = tf.placeholder(tf.float32, shape=(None, 3, None, None))
+        reals_len = self.array_ops.shape(reals_np)[0]
+        fakes_len = self.array_ops.shape(fakes_np)[0]
+        size = self.INCEPTION_DEFAULT_IMAGE_SIZE
+        reals = self.tf.transpose(reals_np, [0, 2, 3, 1])
+        reals = self.tf.image.resize_bilinear(reals, [size, size])
+        fakes = self.tf.transpose(fakes_np, [0, 2, 3, 1])
+        fakes = self.tf.image.resize_bilinear(fakes, [size, size])
 
+        # Define graph outputs
         eval_scores = {}
-        reals_len = reals.size(0)
-        fakes_len = fakes.size(0)
-        assert(reals_len == fakes_len)
-        logger.debug("GeneratorEvaluator. Calculating using %d samples.", reals_len)
-
-        if mock_GE:
-            if use_inception_score:
-                self.results.IS = 3.
-            if use_fid:
-                self.results.FID = 0.4
-            if use_kid:
-                self.results.KID = 0.4
-                self.results.KID_std = 0.1
-            if use_ms_ssim:
-                self.results.MS_SSIM = 3
-                self.results.MS_SSIM_std = 0.5
-            return
-
-        reals_np = reals.numpy()
-        fakes_np = fakes.numpy()
 
         if any((use_inception_score, use_fid, use_kid)):
+            self.inception_graph = self._get_inception_graph(inception_path)
+
             output_tensor = []
             output_tensor += [self.INCEPTION_FINAL_POOL] if use_fid or use_kid else []
             output_tensor += [self.INCEPTION_OUTPUT] if use_inception_score else []
 
-            acts = self.precalc_inception_activations(reals_np if use_fid or use_kid else None,
-                                                        fakes_np,
-                                                        output_tensor, self.inception_graph,
-                                                        inception_batch_size or self.data.batch_size['test'])
+            acts = self.precalc_inception_activations(reals if use_fid or use_kid else None,
+                                                      fakes,
+                                                      output_tensor, self.inception_graph,
+                                                      num_inception_batches)
             real_a, real_l, gen_a, gen_l = acts
 
             if use_inception_score:
@@ -481,39 +489,38 @@ class GeneratorEvaluator(ModelPlugin):
 
             if use_kid:
                 # Split data into 8 blocks and calculate estimations of KID and its std
+                activations_dtype = real_a.dtype
                 kid_fn = self.tfgan.kernel_classifier_distance_and_std_from_activations
-                kid_fn = functools.partial(kid_fn,
-                                           max_block_size=math.ceil(fakes_len / kid_splits))
+                max_block_size = math_ops.cast(math_ops.ceil(fakes_len / kid_splits),
+                                               tf.int32)
+                kid_fn = functools.partial(kid_fn, max_block_size=max_block_size,
+                                           dtype=tf.float64)
                 kid_mean, kid_std = kid_fn(real_a, gen_a)
-                eval_scores['KID'] = kid_mean
+
+                eval_scores['KID'] = math_ops.cast(kid_mean, activations_dtype)
                 if kid_splits > 1:
                     # FIXME: This patches a bug in the calculation of KID's std by tfgan
                     # Remove when it is corrected
-                    kid_var = kid_splits * self.math_ops.square(kid_std)
-                    eval_scores['KID_std'] = self.math_ops.sqrt(kid_var)
+                    kid_var = kid_splits * math_ops.square(kid_std)
+                    kid_std = math_ops.sqrt(kid_var)
+                    eval_scores['KID_std'] = math_ops.cast(kid_std, activations_dtype)
 
         if use_ms_ssim:
-            ms_ssims = self.calc_ms_ssim(fakes_np, reals_np,
-                                            batch_size=self.data.batch_size['test'])
-            assert(self.array_ops.rank(ms_ssims) == 1)  # XXX
-            assert(self.array_ops.shape(ms_ssims)[0] == reals_len)
+            raise RuntimeWarning("MS SSIM computation does not work at the time.")
+            ms_ssims = self.calc_ms_ssim(reals, fakes, num_inception_batches)
+            ms_ssims = ms_ssims[1]
             mn = self.math_ops.reduce_mean(ms_ssims)
-            var = self.math_ops.square(ms_ssims - mn) / (reals_len - 1)
+            var = self.math_ops.reduce_sum(self.math_ops.square(ms_ssims - mn)) / math_ops.cast(fakes_len - 1, tf.float32)
             std = self.math_ops.sqrt(var)
+
             eval_scores['MS_SSIM'] = mn
             eval_scores['MS_SSIM_std'] = std
 
-        # Execute collected scores
-        sess = self.tf.Session()
-        with sess.as_default():
-            eval_scores = sess.run(eval_scores)
-
-        # Log scores
-        for key, value in eval_scores.items():
-            self.results[key] = value.item()  # numpy's `item`
+        self.eval_scores = self.tf_session.make_callable(eval_scores,
+                                                         feed_list=[reals_np, fakes_np])
 
     def precalc_inception_activations(self, reals, fakes, output_tensor,
-                                      inception_net, batch_size=32):
+                                      inception_net, num_batches=32):
         dtype = list(self.tf.float32 for _ in output_tensor)
 
         classifier_fn = functools.partial(self.tfgan.run_inception,
@@ -531,20 +538,8 @@ class GeneratorEvaluator(ModelPlugin):
                                               name='RunClassifier')
 
         def compute_activations(images):
-            assert(type(images) == np.ndarray)
-            assert(len(images.shape) == 4)
-            assert(images.shape[1] == 3)
-            assert(np.min(images[0]) >= -1 and np.max(images[0]) <= 1)
-            # Permute ranks so that "channel" is the last one
-            images = self.tf.transpose(images, [0, 2, 3, 1])
-            # Resize to inception's input size
-            size = self.INCEPTION_DEFAULT_IMAGE_SIZE
-            images = self.tf.image.resize_bilinear(images, [size, size])
             # Calculate number of batches for computation efficiency
-            num_batches = images.shape[0] // batch_size
-            assert(images.shape[0] == batch_size * num_batches)
-            images_list = self.array_ops.split(images,
-                                               num_or_size_splits=num_batches)
+            images_list = self.array_ops.split(images, num_or_size_splits=num_batches)
             imgs = self.array_ops.stack(images_list)
             # Pass them through inception
             act = call_classifier(imgs)
@@ -558,6 +553,7 @@ class GeneratorEvaluator(ModelPlugin):
             else:
                 final = None
                 logits = self.array_ops.concat(self.array_ops.unstack(act[0]), 0)
+
             return final, logits
 
         real_a = None
@@ -568,31 +564,17 @@ class GeneratorEvaluator(ModelPlugin):
 
         return real_a, real_l, gen_a, gen_l
 
-    def calc_ms_ssim(self, fakes, reals, batch_size=32):
-        assert(type(fakes) == np.ndarray)
-        assert(len(fakes.shape) == 4)
-        assert(fakes.shape[1] == 3)
-        assert(np.min(fakes[0]) >= -1 and np.max(fakes[0]) <= 1)
-        assert(type(reals) == np.ndarray)
-        assert(len(reals.shape) == 4)
-        assert(reals.shape[1] == 3)
-        assert(np.min(reals[0]) >= -1 and np.max(reals[0]) <= 1)
-        # Permute ranks so that "channel" is the last one
-        fakes = self.tf.transpose(fakes, [0, 2, 3, 1])
-        reals = self.tf.transpose(reals, [0, 2, 3, 1])
+    def calc_ms_ssim(self, reals, fakes, num_batches=32):
         # Calculate number of batches for computation efficiency
-        num_batches = fakes.shape[0] // batch_size
-        assert(fakes.shape[0] == batch_size * num_batches)
-        fakes_list = self.array_ops.split(fakes,
-                                          num_or_size_splits=num_batches)
-        fake_imgs = self.array_ops.stack(fakes_list)
-        reals_list = self.array_ops.split(reals,
-                                          num_or_size_splits=num_batches)
+        reals_list = self.array_ops.split(reals, num_or_size_splits=num_batches)
         real_imgs = self.array_ops.stack(reals_list)
+        fakes_list = self.array_ops.split(fakes, num_or_size_splits=num_batches)
+        fake_imgs = self.array_ops.stack(fakes_list)
 
         ms_ssim_fn = self.tf.image.ssim_multiscale
         res = self.functional_ops.map_fn(fn=lambda x: ms_ssim_fn(x[0], x[1], max_val=2),
-                                         elems=(fake_imgs, real_imgs),
+                                         elems=(real_imgs, fake_imgs),
+                                         dtype=self.tf.float32,
                                          parallel_iterations=1,
                                          back_prop=False,
                                          swap_memory=True,
@@ -600,6 +582,29 @@ class GeneratorEvaluator(ModelPlugin):
 
         ms_ssims = self.array_ops.concat(self.array_ops.unstack(res), 0)
         return ms_ssims
+
+    def routine(self, reals, fakes):
+        # NOTE: `reals` should not have any meaningful sorting in order to
+        #       calculate a correct estimation of Kernel Inception Distance.
+        if self.eval_scores is None:
+            return
+
+        reals_len = reals.size(0)
+        fakes_len = fakes.size(0)
+        reals_np = reals.numpy()
+        fakes_np = fakes.numpy()
+        assert(reals_len == fakes_len)
+        assert(np.min(reals_np[0]) >= -1 and np.max(reals_np[0]) <= 1)
+        assert(np.min(fakes_np[0]) >= -1 and np.max(fakes_np[0]) <= 1)
+
+        # Execute collected scores
+        logger.debug("GeneratorEvaluator. Calculating using %d reals and %d fakes.",
+                     reals_len, fakes_len)
+        eval_scores = self.eval_scores(reals_np, fakes_np)
+
+        # Log scores
+        for key, value in eval_scores.items():
+            self.results[key] = value.item()  # numpy's `item`
 
 
 class GAN(ModelPlugin):
