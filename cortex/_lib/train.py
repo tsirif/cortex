@@ -49,7 +49,19 @@ def test_epoch(model, epoch, data_mode='test', use_pbar=True, test_seed=None,
     results = eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar,
                          fastdebug=fastdebug)
 
-    model.data.reset(make_pbar=False, mode='test')
+    if train_prg_state is not None:
+        random.set_prgs_state(train_prg_state)
+
+    return results
+
+
+def visualize_epoch(model, data_mode='test', test_seed=None):
+    train_prg_state = None
+    if test_seed is not None:
+        train_prg_state = random.get_prgs_state()
+        random.reseed(test_seed)
+
+    model.data.reset(make_pbar=False, mode=data_mode)
     model.data.next()
     model.viz.clear()
     model.visualize(auto_input=True)
@@ -57,84 +69,66 @@ def test_epoch(model, epoch, data_mode='test', use_pbar=True, test_seed=None,
     if train_prg_state is not None:
         random.set_prgs_state(train_prg_state)
 
-    return results
-
 
 def display_results(train_results, valid_results, test_results,
-                    epoch, epochs, epoch_time, total_time, nl=0,
+                    epoch, epochs, epoch_time, total_time,
                     sep='\n\t\t'):
     if epochs and epoch:
-        nl += 2
         print('\n\tEpoch {} / {} took {:.3f}s. Total time: {:.2f}s'
               .format(epoch, epochs, epoch_time, total_time))
 
     times = train_results.pop('times', None)
     if times:
-        nl += 1
         time_strs = ['{}: {:.3f}'.format(k, v[0]) for k, v in times.items()]
-        print('\tAvg update times:: ' + sep.join(time_strs))
+        print('\tAvg update times::{}'.format(sep) + sep.join(time_strs))
 
     train_losses = train_results.pop('losses')
     test_losses = test_results.pop('losses', None)
 
-    nl += 1
     loss_strs = ['{}: {:.4f} ({:.4f})'
                  .format(k, train_losses[k][0], train_losses[k][1])
                  for k in train_losses.keys()]
-    print('\tAvg (std) train loss:: ' + sep.join(loss_strs))
-    nl += 1
+    print('\tAvg (std) train loss::{}'.format(sep) + sep.join(loss_strs))
     if test_losses:
         loss_strs = ['{}: {:.4f} ({:.4f})'
                      .format(k, test_losses[k][0], test_losses[k][1])
                      for k in test_losses.keys()]
-        print('\tAvg (std) test loss:: ' + sep.join(loss_strs))
+        print('\tAvg (std) test loss::{}'.format(sep) + sep.join(loss_strs))
     else:
         print('\tAvg (std) test loss:: -')
 
     tunables = train_results.pop('tunables', None)
-    nl += 3
     print('\n\tAvg (std) train results')
     print(  '\t-----------------------')
     for k, v_train in train_results.items():
-        nl += 1
         if isinstance(v_train, dict):
-            print('\t{}::\n'.format(k) + sep.join(['{}: {:.4f} ({:.4f})'
+            print('\t{}::{}'.format(k, sep) + sep.join(['{}: {:.4f} ({:.4f})'
                   .format(k_, v[0], v[1]) for k_, v in v_train.items()]))
         else:
             print('\t{}: {:.4f} ({:.4f})'.format(k, v_train[0], v_train[1]))
     if tunables:
-        nl += 1
-        print('\ttunables::\n' + sep.join(['{}: {:.4f}'
+        print('\ttunables::{}'.format(sep) + sep.join(['{}: {:.4f}'
               .format(k_, v[0]) for k_, v in tunables.items()]))
 
     if valid_results:
-        nl += 3
         print('\n\tAvg validation results')
         print(  '\t----------------------')
         for k, v_valid in valid_results.items():
-            nl += 1
             if isinstance(v_valid, dict):
-                print('\t{}::\n'.format(k) + sep.join(['{}: {:.4f}'
+                print('\t{}::{}'.format(k, sep) + sep.join(['{}: {:.4f}'
                       .format(k_, v[0]) for k_, v in v_valid.items()]))
             else:
                 print('\t{}: {:.4f}'.format(k, v_valid[0]))
 
     if test_results:
-        nl += 3
         print('\n\tAvg (std) test results')
         print(  '\t----------------------')
         for k, v_test in test_results.items():
-            nl += 1
             if isinstance(v_test, dict):
-                print('\t{}::\n'.format(k) + sep.join(['{}: {:.4f} ({:.4f})'
+                print('\t{}::{}'.format(k, sep) + sep.join(['{}: {:.4f} ({:.4f})'
                       .format(k_, v[0], v[1]) for k_, v in v_test.items()]))
             else:
                 print('\t{}: {:.4f} ({:.4f})'.format(k, v_test[0], v_test[1]))
-
-    if epoch and epochs and epoch != epochs:
-        if nl > 0:
-            sys.stdout.write("\033[F" * nl)
-            sys.stdout.flush()
 
 
 def align_summaries(epoch, summary):
@@ -172,12 +166,9 @@ def save_best(epoch, model, train_results, best, save_on_best, save_on_lowest):
         if found_best:
             best = current
             exp.save(model, prefix='best_' + save_on_best)
-        msg = '\nFound best {0} on epoch {1}: {2[0]:.5f} ({2[1]:.4f})'.format(
-            save_on_best, epoch, best)
-        if found_best:
+            msg = 'Found best {0} on epoch {1}: {2[0]:.5f} ({2[1]:.4f})'.format(
+                save_on_best, epoch, best)
             print(msg)
-        else:
-            print('\n')
 
         return best
 
@@ -188,7 +179,7 @@ def save_best(epoch, model, train_results, best, save_on_best, save_on_lowest):
 
 
 def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=False,
-              archive_every=10, test_every=1,
+              archive_every=10, test_every=1, visualize_every=1,
               save_on_best=None, save_on_lowest=False, save_on_highest=False,
               full_eval_during_train=False,
               train_mode='train', test_mode='test', eval_only=False,
@@ -201,8 +192,8 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
             the model in the beginning of its training loop.
         autotune_on: If True, it will try to autotune hyperparameters.
         archive_every: Period of epochs for writing checkpoints.
-        test_every: Period of epochs for performing tests and
-            expensive visualizations.
+        test_every: Period of epochs for performing tests.
+        visualize_every: Period of epochs for visualizing model results.
         save_on_best: Name of the key in results to track
             for saving the best model.
         save_on_lowest: Saves when lowest of `save_on_best` result is found.
@@ -249,7 +240,8 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
             # EPOCH INCREMENT
             exp.INFO['epoch'] += 1
             epoch = exp.INFO['epoch']
-            logger.info('Epoch %d / %d', epoch, epochs)
+            if pbar_off:
+                print("Training epoch %d / %d", epoch, epochs)
 
             # TRAINING & VALIDATION
             train_results_ = train_epoch(
@@ -275,16 +267,19 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
                 epoch == epochs
             test_results_ = dict()
             if is_testing_epoch:
-                if not pbar_off:
-                    sys.stdout.write("\033[F" * 2)
-                    sys.stdout.flush()
+                if pbar_off:
+                    print("Evaluating epoch %d / %d", epoch, epochs)
                 test_results_ = test_epoch(model, epoch, data_mode=test_mode,
                                            use_pbar=not(pbar_off),
                                            test_seed=exp.INFO.get('test_seed'),
                                            fastdebug=fastdebug)
                 update_dict_of_lists(exp.SUMMARY['test'], **test_results_)
-                if not pbar_off:
-                    print('\n')
+
+            # VISUALIZING
+            is_viz_epoch = (visualize_every and (epoch - 1) % visualize_every == 0) or \
+                epoch == epochs
+            if is_viz_epoch:
+                visualize_epoch(model, test_seed=exp.INFO.get('test_seed'))
 
             # FINISH TOTAL SUMMARY
             align_summaries(epoch, exp.SUMMARY['train'])
@@ -296,14 +291,13 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
 
             # LIVE PLOT VISUALIZATION
             plot(epoch, init=(epoch == first_epoch + 1))
-            if is_testing_epoch:
+            if is_viz_epoch:
                 model.viz.show(epoch)
 
             # SHELL DISPLAY SUMMARY
             display_results(train_results_, valid_results_, test_results_,
                             epoch, epochs,
-                            epoch_time, total_time,
-                            nl=3 + int(not pbar_off) * int(is_testing_epoch))
+                            epoch_time, total_time)
 
             # CHECKPOINT MODEL
             if archive_every:

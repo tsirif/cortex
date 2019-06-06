@@ -44,7 +44,7 @@ def configure_from_yaml(config_file=None):
 
     if config_file is not None:
         with open(config_file, 'r') as f:
-            d = yaml.load(f)
+            d = yaml.safe_load(f)
         logger.info('Loading config:\n%s', d)
         ARGS.get('model').update(**d.get('model', {}))
         ARGS.get('optimizer').update(**d.get('optimizer', {}))
@@ -85,7 +85,7 @@ def save(model, prefix=''):
     )
 
     file_path = path.join(binary_dir, '{}.t7'.format(prefix))
-    logger.info('Saving checkpoint: %s', file_path)
+    logger.debug('Saving checkpoint: %s', file_path)
     torch.save(state, file_path)
 
 
