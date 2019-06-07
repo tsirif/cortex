@@ -62,6 +62,7 @@ class DataHandler:
 
             loaders[k] = DataLoader(dataset, batch_size=batch_size,
                                     shuffle=shuffle, num_workers=n_workers,
+                                    pin_memory=True,
                                     worker_init_fn=lambda x:
                                     signal.signal(signal.SIGINT,
                                                   signal.SIG_IGN))
@@ -200,7 +201,7 @@ class DataHandler:
 
         def iterator():
             for inputs in loader:
-                inputs_ = [inp.to(exp.DEVICE) for inp in inputs]
+                inputs_ = [inp.to(exp.DEVICE, non_blocking=True) for inp in inputs]
                 yield inputs_
         return iterator()
 
