@@ -257,11 +257,6 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
                 exp.SUMMARY['validate'] = dict()
             update_dict_of_lists(exp.SUMMARY['validate'], **valid_results_)
 
-            # SAVE IF BEST MODEL FOUND
-            if save_on_best or save_on_highest or save_on_lowest:
-                best = save_best(epoch, model, valid_results_,
-                                 best, save_on_best, save_on_lowest)
-
             # TESTING
             is_testing_epoch = (test_every and (epoch - 1) % test_every == 0) or \
                 epoch == epochs
@@ -280,6 +275,11 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
                 epoch == epochs
             if is_viz_epoch:
                 visualize_epoch(model, test_seed=exp.INFO.get('test_seed'))
+
+            # SAVE IF BEST MODEL FOUND
+            if save_on_best or save_on_highest or save_on_lowest:
+                best = save_best(epoch, model, test_results_,
+                                 best, save_on_best, save_on_lowest)
 
             # FINISH TOTAL SUMMARY
             align_summaries(epoch, exp.SUMMARY['train'])
