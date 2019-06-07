@@ -392,8 +392,8 @@ class GeneratorEvaluator(ModelPlugin):
     def build(self, inception_path=None,
               use_inception_score=False, use_fid=False,
               use_kid=False, kid_splits=1,
-              num_inception_batches=32,
-              use_ms_ssim=False, mock_GE=False):
+              use_ms_ssim=False, mock_GE=False,
+              num_inception_batches=1, tf_gpu_mem=0.25):
         """
             Args:
                 inception_path: Contains the persistent path to frozen inception_v1.
@@ -401,9 +401,10 @@ class GeneratorEvaluator(ModelPlugin):
                 use_fid: True, to calculcate Frechet inception distance (FID).
                 use_kid: True, to calculate kernel inception distance (KID).
                 kid_splits: Number of splits to block estimate MMD in KID.
-                num_inception_batches: Batch size to calculate inception activations with.
                 use_ms_ssim: True, to calculate multi-scale structure similarity.
                 mock_GE: True, to return mock values (DEBUGGING).
+                num_inception_batches: Batch size to calculate inception activations with.
+                tf_gpu_mem: Fraction of GPU to be allocated by the tf's CUDA context.
 
         """
         if not any((use_inception_score, use_fid, use_kid, use_ms_ssim)):
@@ -445,7 +446,7 @@ class GeneratorEvaluator(ModelPlugin):
         logger.info("GeneratorEvaluator. inception_v1 path: %s", inception_path)
 
         config = tf.ConfigProto(log_device_placement=False, allow_soft_placement=True)
-        config.gpu_options.allow_growth = True
+        config.gpu_options.per_process_gpu_memory_fraction = tf_gpu_mem
         self.tf_session = tf.Session(config=config)
         #  self.tf_run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 
