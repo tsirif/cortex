@@ -350,7 +350,7 @@ def save_images(images, num_x, num_y, out_file=None, labels=None,  # noqa C901
     if dim_c == 1:
         arr = tile_raster_images(
             X=images, img_shape=(dim_x, dim_y), tile_shape=(num_x, num_y),
-            tile_spacing=(margin_y, margin_x), bottom_margin=margin_y)
+            tile_spacing=(margin_x, margin_y), bottom_margin=margin_y)
         fill = 255
     else:
         arrs = []
@@ -358,7 +358,7 @@ def save_images(images, num_x, num_y, out_file=None, labels=None,  # noqa C901
             arr = tile_raster_images(
                 X=images[:, c].copy(), img_shape=(dim_x, dim_y),
                 tile_shape=(num_x, num_y),
-                tile_spacing=(margin_y, margin_x),
+                tile_spacing=(margin_x, margin_y),
                 bottom_margin=margin_y, right_margin=margin_x)
             arrs.append(arr)
 

@@ -6,10 +6,10 @@ import logging
 
 import torch.nn as nn
 import torch.nn.functional as F
-from .SpectralNormLayer import SNConv2d, SNLinear
 
 from .modules import View
 from .base_network import BaseNet
+from .spectral_norm import SNConv2d, SNLinear
 from .utils import finish_layer_2d
 
 logger = logging.getLogger(__name__)

@@ -43,8 +43,6 @@ def perform_svc(X, Y, clf=None):
     return clf, Y_hat
 
 
-resnet_encoder_args_ = dict(dim_h=64, dim_h_max=1024, batch_norm=True,
-                            f_size=3, n_steps=3)
 mnist_encoder_args_ = dict(dim_h=64, batch_norm=True, f_size=5,
                            pad=2, stride=2, min_dim=7)
 convnet_encoder_args_ = dict(dim_h=64, batch_norm=True, n_steps=3)
@@ -53,8 +51,8 @@ convnet_encoder_args_ = dict(dim_h=64, batch_norm=True, n_steps=3)
 def update_encoder_args(x_shape, model_type='convnet', encoder_args=None):
     encoder_args = encoder_args or {}
     if model_type == 'resnet':
-        from cortex.built_ins.networks.resnets import ResEncoder as Encoder
-        encoder_args_ = {k: v for k, v in resnet_encoder_args_.items()}
+        from cortex.built_ins.networks.resnets import Encoder
+        encoder_args_ = {}
     elif model_type == 'convnet':
         from cortex.built_ins.networks.convnets import SimpleConvEncoder as Encoder
         encoder_args_ = {k: v for k, v in convnet_encoder_args_.items()}
@@ -106,8 +104,6 @@ def update_encoder_args(x_shape, model_type='convnet', encoder_args=None):
     return Encoder, encoder_args_
 
 
-resnet_decoder_args_ = dict(dim_h=64, dim_h_max=1024, batch_norm=True,
-                            f_size=3, n_steps=3)
 mnist_decoder_args_ = dict(dim_h=64, batch_norm=True, f_size=4,
                            pad=1, stride=2, n_steps=2)
 convnet_decoder_args_ = dict(dim_h=64, batch_norm=True, n_steps=3)
@@ -115,10 +111,9 @@ convnet_decoder_args_ = dict(dim_h=64, batch_norm=True, n_steps=3)
 
 def update_decoder_args(x_shape, model_type='convnet', decoder_args=None):
     decoder_args = decoder_args or {}
-
     if model_type == 'resnet':
-        from cortex.built_ins.networks.resnets import ResDecoder as Decoder
-        decoder_args_ = {k: v for k, v in resnet_decoder_args_.items()}
+        from cortex.built_ins.networks.resnets import Decoder
+        decoder_args_ = {}
     elif model_type == 'convnet':
         from cortex.built_ins.networks.conv_decoders import (
             SimpleConvDecoder as Decoder)
@@ -190,7 +185,5 @@ def parameters_init(m, nonlinearity=None, output_nonlinearity=None):
         else:
             gain = nn.init.calculate_gain(nonlinearity)
             nn.init.xavier_uniform_(m.weight, gain=gain)
-        if m.bias is not None:
-            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(m.weight)
-            bound = 1 / math.sqrt(fan_in)
-            nn.init.uniform_(m.bias, -bound, bound)
+    if isinstance(m, nn.Embedding):
+        nn.init.orthogonal_(m.weight)

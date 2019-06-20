@@ -22,7 +22,6 @@ class DataHandler:
         self.noise = {}
         self.loaders = {}
         self.batch = None
-        self.noise = {}
         self.iterator = {}
         self.pbar = None
         self.u = 0
