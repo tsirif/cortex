@@ -61,9 +61,9 @@ def visualize_epoch(model, data_mode='test', test_seed=None):
         train_prg_state = random.get_prgs_state()
         random.reseed(test_seed)
 
+    model.viz.clear()
     model.data.reset(make_pbar=False, mode=data_mode)
     model.data.next()
-    model.viz.clear()
     model.visualize(auto_input=True)
 
     if train_prg_state is not None:
@@ -258,8 +258,8 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
             update_dict_of_lists(exp.SUMMARY['validate'], **valid_results_)
 
             # TESTING
-            is_testing_epoch = (test_every and (epoch - 1) % test_every == 0) or \
-                epoch == epochs
+            is_testing_epoch = (test_every and epoch % test_every == 0) or \
+                epoch == epochs or epoch == first_epoch + 1
             test_results_ = dict()
             if is_testing_epoch:
                 if pbar_off:
@@ -271,8 +271,8 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
                 update_dict_of_lists(exp.SUMMARY['test'], **test_results_)
 
             # VISUALIZING
-            is_viz_epoch = (visualize_every and (epoch - 1) % visualize_every == 0) or \
-                epoch == epochs
+            is_viz_epoch = (visualize_every and epoch % visualize_every == 0) or \
+                epoch == epochs or epoch == first_epoch + 1
             if is_viz_epoch:
                 visualize_epoch(model, test_seed=exp.INFO.get('test_seed'))
 
@@ -290,7 +290,7 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
             total_time += epoch_time
 
             # LIVE PLOT VISUALIZATION
-            plot(epoch, init=(epoch == first_epoch + 1))
+            model.viz.plot(epoch, init=(epoch == first_epoch + 1))
             if is_viz_epoch:
                 model.viz.show(epoch)
 
@@ -301,7 +301,7 @@ def main_loop(model, fastdebug, epochs=500, validate_batches=0, autotune_on=Fals
 
             # CHECKPOINT MODEL
             if archive_every:
-                if (epoch - 1) % archive_every == 0:
+                if epoch % archive_every == 0:
                     exp.save(model, prefix=epoch)
             else:
                 exp.save(model, prefix='last')

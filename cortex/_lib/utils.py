@@ -93,7 +93,7 @@ def bad_values(d):
 
 def convert_to_numpy(value):
     """NOTE: This method synchronizes with GPU."""
-    if isinstance(value, torch.Tensor):
+    if torch.is_tensor(value):
         o = value.detach().squeeze().cpu().numpy()
         if len(o.shape) == 0:
             return o.item()
