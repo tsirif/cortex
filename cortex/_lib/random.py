@@ -8,6 +8,8 @@ Original Code Copyright: Copyright (c) 2018 Olexa Bilaniuk
 Original Code License: MIT License
 
 """
+from contextlib import contextmanager
+from functools import partial
 
 import hashlib
 import numpy as np
@@ -29,14 +31,9 @@ def _pbkdf2(dkLen, password, salt="", rounds=1, hash="sha256"):
     salt = _toBytesUTF8(salt)
     return hashlib.pbkdf2_hmac(hash, password, salt, rounds, dkLen)
 
-
-def _getIntFromPBKDF2(nbits, password, salt="",
-                      rounds=1, hash="sha256", signed=False):
-    nbits = int(nbits)
-    assert nbits % 8 == 0
-    dkLen = nbits // 8
-    buf = _pbkdf2(dkLen, password, salt, rounds, hash)
-    return int.from_bytes(buf, "little", signed=signed)
+################################################################################
+#                                  Numpy PRG                                   #
+################################################################################
 
 
 def _getNpRandomStateFromPBKDF2(password, salt="", rounds=1, hash="sha256"):
@@ -51,6 +48,10 @@ def _seedNpRandomFromPBKDF2(password, salt="", rounds=1, hash="sha256"):
     np.random.set_state(npRandomState)
     return npRandomState
 
+################################################################################
+#                               Python Math PRG                                #
+################################################################################
+
 
 def _getRandomStateFromPBKDF2(password, salt="", rounds=1, hash="sha256"):
     npRandomState = _getNpRandomStateFromPBKDF2(password, salt, rounds, hash)
@@ -64,53 +65,103 @@ def _seedRandomFromPBKDF2(password, salt="", rounds=1, hash="sha256"):
     return randomState
 
 
+################################################################################
+#                                  Torch PRG                                   #
+################################################################################
+
+
+def _getIntFromPBKDF2(nbits, password, salt="",
+                      rounds=1, hash="sha256", signed=False):
+    nbits = int(nbits)
+    assert nbits % 8 == 0
+    dkLen = nbits // 8
+    buf = _pbkdf2(dkLen, password, salt, rounds, hash)
+    return int.from_bytes(buf, "little", signed=signed)
+
+
 def _getTorchRandomSeedFromPBKDF2(password, salt="", rounds=1, hash="sha256"):
     return _getIntFromPBKDF2(64, password, salt, rounds, hash, signed=True)
 
 
-def _seedTorchRandomManualFromPBKDF2(password, salt="", rounds=1, hash="sha256"):
+def _seedTorchRandomFromPBKDF2(password, salt="", rounds=1, hash="sha256"):
     seed = _getTorchRandomSeedFromPBKDF2(password, salt, rounds, hash)
     torch.random.manual_seed(seed)
     return seed
 
 
-def _seedTorchCudaManualFromPBKDF2(password, salt="", rounds=1, hash="sha256"):
+def _seedTorchCudaRandomFromPBKDF2(password, salt="", rounds=1, hash="sha256",
+                                   use_all=False):
     seed = _getTorchRandomSeedFromPBKDF2(password, salt, rounds, hash)
-    torch.cuda.manual_seed(seed)
+    if use_all:
+        torch.cuda.manual_seed_all(seed)
+    else:
+        torch.cuda.manual_seed(seed)
     return seed
 
 
-def _seedTorchCudaManualAllFromPBKDF2(password, salt="", rounds=1, hash="sha256"):
-    seed = _getTorchRandomSeedFromPBKDF2(password, salt, rounds, hash)
-    torch.cuda.manual_seed_all(seed)
-    return seed
+def _setTorchCudaRandomFromState(state, use_all=False):
+    if not torch.cuda.is_available() or str(exp.DEVICE) == 'cpu':
+        return
+
+    if use_all:
+        torch.cuda.set_rng_state_all(state)
+        return
+
+    # TODO if distributed, broadcast and select (scatter) states
+    torch.cuda.set_rng_state(state, device=exp.DEVICE)
 
 
-# PRG name: (seeder, setter, getter)
-PRGS = {
-    "random": (_seedRandomFromPBKDF2,
-               random.setstate, random.getstate),
-    "numpy.random": (_seedNpRandomFromPBKDF2,
-                     np.random.set_state, np.random.get_state),
-    "torch.random": (_seedTorchRandomManualFromPBKDF2,
-                     torch.random.set_rng_state, torch.random.get_rng_state),
-    "torch.cuda": (_seedTorchCudaManualAllFromPBKDF2,
-                   torch.cuda.set_rng_state, torch.cuda.get_rng_state),
+def _getTorchCudaRandomState(use_all=False):
+    if not torch.cuda.is_available() or str(exp.DEVICE) == 'cpu':
+        return
+
+    if use_all:
+        return torch.cuda.get_rng_state_all()
+
+    # TODO if distributed, gather states
+    return torch.cuda.get_rng_state(device=exp.DEVICE)
+
+
+PRGS = ("random", "numpy.random", "torch.random", "torch.cuda.random")
+SEEDERS = {
+    "random": _seedRandomFromPBKDF2,
+    "numpy.random": _seedNpRandomFromPBKDF2,
+    "torch.random": _seedTorchRandomFromPBKDF2,
+    "torch.cuda": _seedTorchCudaRandomFromPBKDF2,
     }
-PRGS_NAMES = tuple(PRGS.keys())
+SETTERS = {
+    "random": random.setstate,
+    "numpy.random": np.random.set_state,
+    "torch.random": torch.random.set_rng_state,
+    "torch.cuda": _setTorchCudaRandomFromState,
+    }
+GETTERS = {
+    "random": random.getstate,
+    "numpy.random": np.random.get_state,
+    "torch.random": torch.random.get_rng_state,
+    "torch.cuda": _getTorchCudaRandomState,
+    }
 
 
-def reseed(seed, prgs=PRGS_NAMES):
+def init(use_all_cuda=False):
+    """Initialize module by providing info about device usage."""
+    if use_all_cuda is True:
+        SEEDERS["torch.cuda"] = partial(_seedTorchCudaRandomFromPBKDF2, use_all=True)
+        SETTERS["torch.cuda"] = partial(_setTorchCudaRandomFromState, use_all=True)
+        GETTERS["torch.cuda"] = partial(_getTorchCudaRandomState, use_all=True)
+
+
+def reseed(seed, prgs=PRGS):
     """Seed PRNGs for reproducibility at beginning of interval."""
     if not isinstance(prgs, tuple):
         prgs = tuple(prgs, )
     password = "Seed: {}".format(seed)
     for prg in prgs:
-        seeder = PRGS[prg][0]
+        seeder = SEEDERS[prg]
         seeder(password, salt=prg)
 
 
-def set_prgs_state(state, seed=None):
+def set_prgs_state(state, seed=None, strict=False, prgs=PRGS):
     """Set `state` for the PRGs possibly used.
 
     If `state` does not contain information about a certain PRG used,
@@ -125,24 +176,20 @@ def set_prgs_state(state, seed=None):
        same machine and using the same primary device.
 
     """
-    for prg in PRGS:
+    for prg in prgs:
         if prg in state:
-            setter = PRGS[prg][1]
-            if prg != "torch.cuda":
-                setter(state[prg])
-            elif torch.cuda.is_available() and str(exp.DEVICE) != 'cpu':
-                for devnum in range(torch.cuda.device_count()):
-                    setter(state[prg][devnum], device=devnum)
-        elif prg != "torch.cuda" or \
-                (torch.cuda.is_available() and str(exp.DEVICE) != 'cpu'):
-            if seed is not None:
-                reseed(seed, prg)
+            setter = SETTERS[prg]
+            setter(state[prg])
+        else:
+            if not strict:
+                if seed is not None:
+                    reseed(seed, prg)
             else:
                 raise RuntimeError("State could not be set for PRG: {}"
                                    .format(prg))
 
 
-def get_prgs_state():
+def get_prgs_state(prgs=PRGS):
     """Extract PRGs states for checkpointing.
 
     :returns: a dictionary with PRG's current internal states
@@ -155,13 +202,18 @@ def get_prgs_state():
 
     """
     state = dict()
-    for prg in PRGS:
-        getter = PRGS[prg][2]
-        if prg != "torch.cuda":
-            state[prg] = getter()
-        elif torch.cuda.is_available() and str(exp.DEVICE) != 'cpu':
-            state[prg] = dict()
-            for devnum in range(torch.cuda.device_count()):
-                state[prg][devnum] = getter(device=devnum)
-
+    for prg in prgs:
+        getter = GETTERS[prg]
+        state[prg] = getter()
     return state
+
+
+@contextmanager
+def fresh_prgs(seed=None, prgs=PRGS):
+    prgs_state = None
+    if seed is not None:
+        prgs_state = get_prgs_state(prgs=prgs)
+        reseed(seed, prgs=prgs)
+    yield
+    if prgs_state is not None:
+        set_prgs_state(prgs_state, strict=True, prgs=prgs)

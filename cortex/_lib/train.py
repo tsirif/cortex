@@ -8,7 +8,8 @@ import sys
 import time
 import warnings
 
-from . import (exp, random, viz)
+from . import (exp, viz)
+from .random import fresh_prgs
 from .utils import (convert_to_numpy, summarize_results, update_dict_of_lists)
 from .viz import plot
 
@@ -26,48 +27,29 @@ def train_epoch(model, epoch, full_eval_during_train, validate_batches=0,
                      fastdebug=fastdebug)
 
     if full_eval_during_train:
-        return eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar)
+        return test_epoch(model, epoch, data_mode=data_mode,
+                          use_pbar=use_pbar, fastdebug=fastdebug)
 
     results = summarize_results(model._all_epoch_results)
     return convert_to_numpy(results)
 
 
-def eval_epoch(model, epoch, data_mode='train', use_pbar=True, fastdebug=None):
-    model.eval_loop(epoch, data_mode=data_mode, use_pbar=use_pbar,
-                    fastdebug=fastdebug)
-    results = summarize_results(model._all_epoch_results)
+def test_epoch(model, epoch, test_seed=None,
+               data_mode='test', use_pbar=True, fastdebug=None):
+    with fresh_prgs(test_seed):
+        model.eval_loop(epoch, data_mode=data_mode, use_pbar=use_pbar,
+                        fastdebug=fastdebug)
+        results = summarize_results(model._all_epoch_results)
+
     return convert_to_numpy(results)
-
-
-def test_epoch(model, epoch, data_mode='test', use_pbar=True, test_seed=None,
-               fastdebug=None):
-    train_prg_state = None
-    if test_seed is not None:
-        train_prg_state = random.get_prgs_state()
-        random.reseed(test_seed)
-
-    results = eval_epoch(model, epoch, data_mode=data_mode, use_pbar=use_pbar,
-                         fastdebug=fastdebug)
-
-    if train_prg_state is not None:
-        random.set_prgs_state(train_prg_state)
-
-    return results
 
 
 def visualize_epoch(model, data_mode='test', test_seed=None):
-    train_prg_state = None
-    if test_seed is not None:
-        train_prg_state = random.get_prgs_state()
-        random.reseed(test_seed)
-
-    model.viz.clear()
-    model.data.reset(make_pbar=False, mode=data_mode)
-    model.data.next()
-    model.visualize(auto_input=True)
-
-    if train_prg_state is not None:
-        random.set_prgs_state(train_prg_state)
+    with fresh_prgs(test_seed):
+        model.viz.clear()
+        model.data.reset(make_pbar=False, mode=data_mode)
+        model.data.next()
+        model.visualize(auto_input=True)
 
 
 def display_results(train_results, valid_results, test_results,
